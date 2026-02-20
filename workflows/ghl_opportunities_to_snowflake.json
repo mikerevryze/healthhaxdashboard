@@ -1,0 +1,246 @@
+{
+  "name": "GHL Opportunities → Snowflake (Paginated)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "trigger-node",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "page",
+              "value": 1
+            },
+            {
+              "name": "limit",
+              "value": 100
+            }
+          ],
+          "string": [
+            {
+              "name": "locationId",
+              "value": "flh4Lf5SwDi5n025GfVI"
+            }
+          ],
+          "boolean": [
+            {
+              "name": "hasMore",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "init-pagination",
+      "name": "Init Pagination",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0],
+      "notesInFlow": true,
+      "notes": "Initialize page=1, limit=100, hasMore=true. Number types are critical."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://services.leadconnectorhq.com/opportunities/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ locationId: $json.locationId, limit: $json.limit, page: $json.page }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "http-ghl-search",
+      "name": "GHL Search Opportunities",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "notesInFlow": true,
+      "notes": "CRITICAL: Body Content Type = Raw/Custom, MIME = application/json, Body uses expression wrapper. See docs/FIX_EXPLANATION.md."
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "opportunities",
+        "options": {}
+      },
+      "id": "split-opportunities",
+      "name": "Split Out Opportunities",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Map GHL opportunity fields to Snowflake target columns.\n// Each input item is one opportunity from the Split Out node.\nconst items = $input.all();\nconst mapped = items.map(item => {\n  const opp = item.json;\n  return {\n    json: {\n      OPPORTUNITY_ID: opp.id || null,\n      LOCATION_ID: opp.locationId || null,\n      CONTACT_ID: opp.contact?.id || null,\n      CONTACT_NAME: opp.contact?.name || null,\n      CONTACT_EMAIL: opp.contact?.email || null,\n      CONTACT_PHONE: opp.contact?.phone || null,\n      PIPELINE_ID: opp.pipelineId || null,\n      PIPELINE_STAGE_ID: opp.pipelineStageId || null,\n      PIPELINE_NAME: opp.pipeline?.name || null,\n      STAGE_NAME: opp.pipelineStage?.name || null,\n      STATUS: opp.status || null,\n      MONETARY_VALUE: opp.monetaryValue != null ? Number(opp.monetaryValue) : null,\n      SOURCE: opp.source || null,\n      ASSIGNED_TO: opp.assignedTo || null,\n      CREATED_AT: opp.createdAt || null,\n      UPDATED_AT: opp.updatedAt || null,\n      LAST_STATUS_CHANGE_AT: opp.lastStatusChangeAt || null,\n      LAST_STAGE_CHANGE_AT: opp.lastStageChangeAt || null,\n      NAME: opp.name || null,\n      _LOADED_AT: new Date().toISOString()\n    }\n  };\n});\nreturn mapped;"
+      },
+      "id": "code-map-fields",
+      "name": "Map Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "MERGE INTO RAW.GHL_OPPORTUNITIES AS target\nUSING (\n  SELECT\n    $1:OPPORTUNITY_ID::STRING AS OPPORTUNITY_ID,\n    $1:LOCATION_ID::STRING AS LOCATION_ID,\n    $1:CONTACT_ID::STRING AS CONTACT_ID,\n    $1:CONTACT_NAME::STRING AS CONTACT_NAME,\n    $1:CONTACT_EMAIL::STRING AS CONTACT_EMAIL,\n    $1:CONTACT_PHONE::STRING AS CONTACT_PHONE,\n    $1:PIPELINE_ID::STRING AS PIPELINE_ID,\n    $1:PIPELINE_STAGE_ID::STRING AS PIPELINE_STAGE_ID,\n    $1:PIPELINE_NAME::STRING AS PIPELINE_NAME,\n    $1:STAGE_NAME::STRING AS STAGE_NAME,\n    $1:STATUS::STRING AS STATUS,\n    $1:MONETARY_VALUE::NUMBER(12,2) AS MONETARY_VALUE,\n    $1:SOURCE::STRING AS SOURCE,\n    $1:ASSIGNED_TO::STRING AS ASSIGNED_TO,\n    $1:CREATED_AT::TIMESTAMP_NTZ AS CREATED_AT,\n    $1:UPDATED_AT::TIMESTAMP_NTZ AS UPDATED_AT,\n    $1:LAST_STATUS_CHANGE_AT::TIMESTAMP_NTZ AS LAST_STATUS_CHANGE_AT,\n    $1:LAST_STAGE_CHANGE_AT::TIMESTAMP_NTZ AS LAST_STAGE_CHANGE_AT,\n    $1:NAME::STRING AS NAME,\n    $1:_LOADED_AT::TIMESTAMP_NTZ AS _LOADED_AT\n  FROM VALUES (PARSE_JSON('{{ $json.toJsonString() }}'))\n) AS source\nON target.OPPORTUNITY_ID = source.OPPORTUNITY_ID\nWHEN MATCHED THEN UPDATE SET\n  target.LOCATION_ID = source.LOCATION_ID,\n  target.CONTACT_ID = source.CONTACT_ID,\n  target.CONTACT_NAME = source.CONTACT_NAME,\n  target.CONTACT_EMAIL = source.CONTACT_EMAIL,\n  target.CONTACT_PHONE = source.CONTACT_PHONE,\n  target.PIPELINE_ID = source.PIPELINE_ID,\n  target.PIPELINE_STAGE_ID = source.PIPELINE_STAGE_ID,\n  target.PIPELINE_NAME = source.PIPELINE_NAME,\n  target.STAGE_NAME = source.STAGE_NAME,\n  target.STATUS = source.STATUS,\n  target.MONETARY_VALUE = source.MONETARY_VALUE,\n  target.SOURCE = source.SOURCE,\n  target.ASSIGNED_TO = source.ASSIGNED_TO,\n  target.CREATED_AT = source.CREATED_AT,\n  target.UPDATED_AT = source.UPDATED_AT,\n  target.LAST_STATUS_CHANGE_AT = source.LAST_STATUS_CHANGE_AT,\n  target.LAST_STAGE_CHANGE_AT = source.LAST_STAGE_CHANGE_AT,\n  target.NAME = source.NAME,\n  target._LOADED_AT = source._LOADED_AT\nWHEN NOT MATCHED THEN INSERT (\n  OPPORTUNITY_ID, LOCATION_ID, CONTACT_ID, CONTACT_NAME, CONTACT_EMAIL,\n  CONTACT_PHONE, PIPELINE_ID, PIPELINE_STAGE_ID, PIPELINE_NAME, STAGE_NAME,\n  STATUS, MONETARY_VALUE, SOURCE, ASSIGNED_TO, CREATED_AT, UPDATED_AT,\n  LAST_STATUS_CHANGE_AT, LAST_STAGE_CHANGE_AT, NAME, _LOADED_AT\n) VALUES (\n  source.OPPORTUNITY_ID, source.LOCATION_ID, source.CONTACT_ID, source.CONTACT_NAME,\n  source.CONTACT_EMAIL, source.CONTACT_PHONE, source.PIPELINE_ID,\n  source.PIPELINE_STAGE_ID, source.PIPELINE_NAME, source.STAGE_NAME,\n  source.STATUS, source.MONETARY_VALUE, source.SOURCE, source.ASSIGNED_TO,\n  source.CREATED_AT, source.UPDATED_AT, source.LAST_STATUS_CHANGE_AT,\n  source.LAST_STAGE_CHANGE_AT, source.NAME, source._LOADED_AT\n);"
+      },
+      "id": "snowflake-merge",
+      "name": "Snowflake MERGE",
+      "type": "n8n-nodes-base.snowflake",
+      "typeVersion": 1,
+      "position": [1100, 0],
+      "credentials": {
+        "snowflake": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Snowflake account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "number": [
+            {
+              "name": "page",
+              "value": "={{ $('GHL Search Opportunities').first().json.meta?.nextPage ?? $('Init Pagination').first().json.page + 1 }}"
+            },
+            {
+              "name": "limit",
+              "value": 100
+            }
+          ],
+          "string": [
+            {
+              "name": "locationId",
+              "value": "flh4Lf5SwDi5n025GfVI"
+            }
+          ],
+          "boolean": [
+            {
+              "name": "hasMore",
+              "value": "={{ $('GHL Search Opportunities').first().json.meta?.total > $('GHL Search Opportunities').first().json.meta?.currentPage * 100 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "increment-page",
+      "name": "Increment Page",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1320, 0],
+      "notesInFlow": true,
+      "notes": "Increment page. Compute hasMore from meta.total vs currentPage * limit."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasMore }}",
+              "value2": true
+            }
+          ],
+          "number": [
+            {
+              "value1": "={{ $('GHL Search Opportunities').first().json.opportunities?.length ?? 0 }}",
+              "operation": "largerEqual",
+              "value2": 1
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "if-more-pages",
+      "name": "More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1540, 0],
+      "notesInFlow": true,
+      "notes": "Continue if hasMore=true AND last response had >= 1 opportunity."
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [{ "node": "Init Pagination", "type": "main", "index": 0 }]
+      ]
+    },
+    "Init Pagination": {
+      "main": [
+        [{ "node": "GHL Search Opportunities", "type": "main", "index": 0 }]
+      ]
+    },
+    "GHL Search Opportunities": {
+      "main": [
+        [{ "node": "Split Out Opportunities", "type": "main", "index": 0 }]
+      ]
+    },
+    "Split Out Opportunities": {
+      "main": [
+        [{ "node": "Map Fields", "type": "main", "index": 0 }]
+      ]
+    },
+    "Map Fields": {
+      "main": [
+        [{ "node": "Snowflake MERGE", "type": "main", "index": 0 }]
+      ]
+    },
+    "Snowflake MERGE": {
+      "main": [
+        [{ "node": "Increment Page", "type": "main", "index": 0 }]
+      ]
+    },
+    "Increment Page": {
+      "main": [
+        [{ "node": "More Pages?", "type": "main", "index": 0 }]
+      ]
+    },
+    "More Pages?": {
+      "main": [
+        [{ "node": "GHL Search Opportunities", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "GHL" },
+    { "name": "Snowflake" },
+    { "name": "Production" }
+  ]
+}

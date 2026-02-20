@@ -1,0 +1,32 @@
+-- Snowflake target table for GHL Opportunities
+-- Schema: RAW (landing zone for raw API data)
+-- Idempotent: safe to re-run
+
+CREATE TABLE IF NOT EXISTS RAW.GHL_OPPORTUNITIES (
+    OPPORTUNITY_ID   STRING       NOT NULL,
+    LOCATION_ID      STRING,
+    CONTACT_ID       STRING,
+    CONTACT_NAME     STRING,
+    CONTACT_EMAIL    STRING,
+    CONTACT_PHONE    STRING,
+    PIPELINE_ID      STRING,
+    PIPELINE_STAGE_ID STRING,
+    PIPELINE_NAME    STRING,
+    STAGE_NAME       STRING,
+    STATUS           STRING,
+    MONETARY_VALUE   NUMBER(12,2),
+    SOURCE           STRING,
+    ASSIGNED_TO      STRING,
+    CREATED_AT       TIMESTAMP_NTZ,
+    UPDATED_AT       TIMESTAMP_NTZ,
+    LAST_STATUS_CHANGE_AT TIMESTAMP_NTZ,
+    LAST_STAGE_CHANGE_AT  TIMESTAMP_NTZ,
+    NAME             STRING,
+    _LOADED_AT       TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+
+    CONSTRAINT pk_ghl_opportunities PRIMARY KEY (OPPORTUNITY_ID)
+);
+
+-- Clustering key for merge performance on large tables
+ALTER TABLE RAW.GHL_OPPORTUNITIES
+    CLUSTER BY (OPPORTUNITY_ID);
