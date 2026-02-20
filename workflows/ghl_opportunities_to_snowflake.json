@@ -43,11 +43,55 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build the HTTP request body with guaranteed correct types.\n// Runs in V8 — completely bypasses n8n's expression parser.\n// Outputs a plain object (NOT a string) so n8n's JSON body mode\n// serializes it with correct number types.\nconst page = Number($input.first().json.page);\nconst limit = Number($input.first().json.limit);\nconst locationId = String($input.first().json.locationId);\n\nreturn [{\n  json: {\n    locationId: locationId,\n    limit: limit,\n    page: page\n  }\n}];"
+        "method": "GET",
+        "url": "https://services.leadconnectorhq.com/opportunities/pipelines",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pit-c7fe39b9-e8c8-443e-b3af-451b0b086ead"
+            },
+            {
+              "name": "Version",
+              "value": "2021-07-28"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "locationId",
+              "value": "={{ $json.locationId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [16, -96],
+      "id": "b1c2d3e4-0001-4000-8000-000000000010",
+      "name": "Fetch Pipelines"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build pipeline/stage ID-to-Name lookup maps from the API response.\n// Pass through pagination data from Edit Fields so the loop works.\nconst pipelinesData = $input.first().json;\nconst pipelines = pipelinesData.pipelines || [];\nconst stageMap = {};\nconst pipelineMap = {};\n\nfor (const p of pipelines) {\n  pipelineMap[p.id] = p.name;\n  for (const s of (p.stages || [])) {\n    stageMap[s.id] = s.name;\n  }\n}\n\nconst editFields = $('Edit Fields').first().json;\nreturn [{\n  json: {\n    page: editFields.page,\n    limit: editFields.limit,\n    locationId: editFields.locationId,\n    _pipelineMap: pipelineMap,\n    _stageMap: stageMap\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [16, -96],
+      "position": [176, -96],
+      "id": "b1c2d3e4-0002-4000-8000-000000000011",
+      "name": "Build Pipe Map"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the HTTP request body with guaranteed correct types.\n// Runs in V8 — completely bypasses n8n's expression parser.\nconst page = Number($input.first().json.page);\nconst limit = Number($input.first().json.limit);\nconst locationId = String($input.first().json.locationId);\n\nreturn [{\n  json: {\n    locationId: locationId,\n    limit: limit,\n    page: page\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [336, -96],
       "id": "a1b2c3d4-0002-4000-8000-000000000002",
       "name": "Build Request Body"
     },
@@ -76,7 +120,7 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [176, -96],
+      "position": [496, -96],
       "id": "8277e1a2-67ea-4aae-84b3-72cd03b01289",
       "name": "HTTP Request",
       "alwaysOutputData": true
@@ -107,7 +151,7 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
-      "position": [336, -96],
+      "position": [656, -96],
       "id": "03ca26e5-e69a-4ab4-9b42-0195a1cc6dbe",
       "name": "If"
     },
@@ -118,28 +162,28 @@
       },
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [520, -96],
+      "position": [816, -96],
       "id": "f405f20c-ea6b-4112-9711-957dca074dab",
       "name": "Split Out"
     },
     {
       "parameters": {
-        "jsCode": "return items.map(item => {\n  const o = item.json;\n\n  const safeStr = (v) => {\n    if (v === undefined || v === null) return null;\n    if (typeof v === 'string') {\n      const s = v.trim();\n      if (s === '' || s.toLowerCase() === 'null') return null;\n      return s;\n    }\n    return String(v);\n  };\n\n  const safeNum = (v) => {\n    if (v === undefined || v === null) return null;\n    if (typeof v === 'number') return v;\n    const s = String(v).trim();\n    if (s === '' || s.toLowerCase() === 'null') return null;\n    const n = Number(s);\n    return Number.isFinite(n) ? n : null;\n  };\n\n  return {\n    json: {\n      client_id: \"health_hax\",\n\n      opportunity_id: safeStr(o.id ?? o.opportunityId),\n      location_id: safeStr(o.locationId),\n      contact_id: safeStr(o.contactId),\n\n      pipeline_id: safeStr(o.pipelineId),\n      pipeline_stage_id: safeStr(o.pipelineStageId),\n\n      status: safeStr(o.status),\n      name: safeStr(o.name),\n\n      monetary_value: safeNum(o.monetaryValue ?? o.value),\n\n      created_at_str: safeStr(o.createdAt),\n      updated_at_str: safeStr(o.updatedAt),\n      closed_at_str: safeStr(o.closedAt),\n\n      raw: JSON.stringify(o),\n      pulled_at_ts: new Date().toISOString()\n    }\n  };\n});\n"
+        "jsCode": "// Resolve pipeline & stage names using the lookup from Build Pipe Map\nconst maps = $('Build Pipe Map').first().json;\nconst pipelineMap = maps._pipelineMap || {};\nconst stageMap = maps._stageMap || {};\n\nreturn items.map(item => {\n  const o = item.json;\n\n  const safeStr = (v) => {\n    if (v === undefined || v === null) return null;\n    if (typeof v === 'string') {\n      const s = v.trim();\n      if (s === '' || s.toLowerCase() === 'null') return null;\n      return s;\n    }\n    return String(v);\n  };\n\n  const safeNum = (v) => {\n    if (v === undefined || v === null) return null;\n    if (typeof v === 'number') return v;\n    const s = String(v).trim();\n    if (s === '' || s.toLowerCase() === 'null') return null;\n    const n = Number(s);\n    return Number.isFinite(n) ? n : null;\n  };\n\n  return {\n    json: {\n      client_id: \"health_hax\",\n\n      opportunity_id: safeStr(o.id ?? o.opportunityId),\n      location_id: safeStr(o.locationId),\n      contact_id: safeStr(o.contactId),\n\n      pipeline_id: safeStr(o.pipelineId),\n      pipeline_stage_id: safeStr(o.pipelineStageId),\n      pipeline_name: pipelineMap[o.pipelineId] || null,\n      pipeline_stage_name: stageMap[o.pipelineStageId] || null,\n\n      status: safeStr(o.status),\n      name: safeStr(o.name),\n\n      monetary_value: safeNum(o.monetaryValue ?? o.value),\n\n      created_at_str: safeStr(o.createdAt),\n      updated_at_str: safeStr(o.updatedAt),\n      closed_at_str: safeStr(o.closedAt),\n\n      raw: JSON.stringify(o),\n      pulled_at_ts: new Date().toISOString()\n    }\n  };\n});\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [696, -96],
+      "position": [976, -96],
       "id": "ea820eb8-7889-4a02-84f2-20a0f9b90748",
       "name": "Code in JavaScript"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "MERGE INTO REVRYZE.RAW.GHL_OPPORTUNITIES t\nUSING (\n  SELECT\n    'health_hax' AS CLIENT_ID,\n\n    NULLIF(NULLIF('{{$json.opportunity_id}}', 'null'), '') AS OPPORTUNITY_ID,\n    NULLIF(NULLIF('{{$json.location_id}}', 'null'), '') AS LOCATION_ID,\n    NULLIF(NULLIF('{{$json.contact_id}}', 'null'), '') AS CONTACT_ID,\n\n    NULLIF(NULLIF('{{$json.pipeline_id}}', 'null'), '') AS PIPELINE_ID,\n    NULLIF(NULLIF('{{$json.pipeline_stage_id}}', 'null'), '') AS PIPELINE_STAGE_ID,\n\n    NULLIF(NULLIF(REPLACE('{{$json.status}}', '''', ''''''), 'null'), '') AS STATUS,\n    NULLIF(NULLIF(REPLACE('{{$json.name}}', '''', ''''''), 'null'), '') AS NAME,\n\n    TRY_TO_NUMBER(NULLIF(NULLIF('{{$json.monetary_value}}', 'null'), ''), 18, 2) AS MONETARY_VALUE,\n\n    NULLIF(NULLIF('{{$json.created_at_str}}', 'null'), '') AS CREATED_AT_STR,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.created_at_str}}', 'null'), '')) AS CREATED_AT_TS,\n\n    NULLIF(NULLIF('{{$json.updated_at_str}}', 'null'), '') AS UPDATED_AT_STR,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.updated_at_str}}', 'null'), '')) AS UPDATED_AT_TS,\n\n    NULLIF(NULLIF('{{$json.closed_at_str}}', 'null'), '') AS CLOSED_AT_STR,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.closed_at_str}}', 'null'), '')) AS CLOSED_AT_TS,\n\n    TRY_PARSE_JSON($${{$json.raw}}$$) AS RAW,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.pulled_at_ts}}', 'null'), '')) AS PULLED_AT_TS\n) s\n\nON t.OPPORTUNITY_ID = s.OPPORTUNITY_ID\n\nWHEN MATCHED THEN UPDATE SET\n  LOCATION_ID = s.LOCATION_ID,\n  CONTACT_ID = s.CONTACT_ID,\n  PIPELINE_ID = s.PIPELINE_ID,\n  PIPELINE_STAGE_ID = s.PIPELINE_STAGE_ID,\n  STATUS = s.STATUS,\n  NAME = s.NAME,\n  MONETARY_VALUE = s.MONETARY_VALUE,\n  UPDATED_AT_STR = s.UPDATED_AT_STR,\n  UPDATED_AT_TS = s.UPDATED_AT_TS,\n  CLOSED_AT_STR = s.CLOSED_AT_STR,\n  CLOSED_AT_TS = s.CLOSED_AT_TS,\n  RAW = s.RAW,\n  PULLED_AT_TS = s.PULLED_AT_TS\n\nWHEN NOT MATCHED THEN INSERT (\n  CLIENT_ID,\n  OPPORTUNITY_ID,\n  LOCATION_ID,\n  CONTACT_ID,\n  PIPELINE_ID,\n  PIPELINE_STAGE_ID,\n  STATUS,\n  NAME,\n  MONETARY_VALUE,\n  CREATED_AT_STR,\n  CREATED_AT_TS,\n  UPDATED_AT_STR,\n  UPDATED_AT_TS,\n  CLOSED_AT_STR,\n  CLOSED_AT_TS,\n  RAW,\n  PULLED_AT_TS\n)\nVALUES (\n  s.CLIENT_ID,\n  s.OPPORTUNITY_ID,\n  s.LOCATION_ID,\n  s.CONTACT_ID,\n  s.PIPELINE_ID,\n  s.PIPELINE_STAGE_ID,\n  s.STATUS,\n  s.NAME,\n  s.MONETARY_VALUE,\n  s.CREATED_AT_STR,\n  s.CREATED_AT_TS,\n  s.UPDATED_AT_STR,\n  s.UPDATED_AT_TS,\n  s.CLOSED_AT_STR,\n  s.CLOSED_AT_TS,\n  s.RAW,\n  s.PULLED_AT_TS\n);\n"
+        "query": "MERGE INTO REVRYZE.RAW.GHL_OPPORTUNITIES t\nUSING (\n  SELECT\n    'health_hax' AS CLIENT_ID,\n\n    NULLIF(NULLIF('{{$json.opportunity_id}}', 'null'), '') AS OPPORTUNITY_ID,\n    NULLIF(NULLIF('{{$json.location_id}}', 'null'), '') AS LOCATION_ID,\n    NULLIF(NULLIF('{{$json.contact_id}}', 'null'), '') AS CONTACT_ID,\n\n    NULLIF(NULLIF('{{$json.pipeline_id}}', 'null'), '') AS PIPELINE_ID,\n    NULLIF(NULLIF('{{$json.pipeline_stage_id}}', 'null'), '') AS PIPELINE_STAGE_ID,\n    NULLIF(NULLIF(REPLACE('{{$json.pipeline_name}}', '''', ''''''), 'null'), '') AS PIPELINE_NAME,\n    NULLIF(NULLIF(REPLACE('{{$json.pipeline_stage_name}}', '''', ''''''), 'null'), '') AS PIPELINE_STAGE_NAME,\n\n    NULLIF(NULLIF(REPLACE('{{$json.status}}', '''', ''''''), 'null'), '') AS STATUS,\n    NULLIF(NULLIF(REPLACE('{{$json.name}}', '''', ''''''), 'null'), '') AS NAME,\n\n    TRY_TO_NUMBER(NULLIF(NULLIF('{{$json.monetary_value}}', 'null'), ''), 18, 2) AS MONETARY_VALUE,\n\n    NULLIF(NULLIF('{{$json.created_at_str}}', 'null'), '') AS CREATED_AT_STR,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.created_at_str}}', 'null'), '')) AS CREATED_AT_TS,\n\n    NULLIF(NULLIF('{{$json.updated_at_str}}', 'null'), '') AS UPDATED_AT_STR,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.updated_at_str}}', 'null'), '')) AS UPDATED_AT_TS,\n\n    NULLIF(NULLIF('{{$json.closed_at_str}}', 'null'), '') AS CLOSED_AT_STR,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.closed_at_str}}', 'null'), '')) AS CLOSED_AT_TS,\n\n    TRY_PARSE_JSON($RAW${{$json.raw}}$RAW$) AS RAW,\n    TRY_TO_TIMESTAMP_NTZ(NULLIF(NULLIF('{{$json.pulled_at_ts}}', 'null'), '')) AS PULLED_AT_TS\n) s\n\nON t.OPPORTUNITY_ID = s.OPPORTUNITY_ID\n\nWHEN MATCHED THEN UPDATE SET\n  LOCATION_ID = s.LOCATION_ID,\n  CONTACT_ID = s.CONTACT_ID,\n  PIPELINE_ID = s.PIPELINE_ID,\n  PIPELINE_STAGE_ID = s.PIPELINE_STAGE_ID,\n  PIPELINE_NAME = s.PIPELINE_NAME,\n  PIPELINE_STAGE_NAME = s.PIPELINE_STAGE_NAME,\n  STATUS = s.STATUS,\n  NAME = s.NAME,\n  MONETARY_VALUE = s.MONETARY_VALUE,\n  UPDATED_AT_STR = s.UPDATED_AT_STR,\n  UPDATED_AT_TS = s.UPDATED_AT_TS,\n  CLOSED_AT_STR = s.CLOSED_AT_STR,\n  CLOSED_AT_TS = s.CLOSED_AT_TS,\n  RAW = s.RAW,\n  PULLED_AT_TS = s.PULLED_AT_TS\n\nWHEN NOT MATCHED THEN INSERT (\n  CLIENT_ID,\n  OPPORTUNITY_ID,\n  LOCATION_ID,\n  CONTACT_ID,\n  PIPELINE_ID,\n  PIPELINE_STAGE_ID,\n  PIPELINE_NAME,\n  PIPELINE_STAGE_NAME,\n  STATUS,\n  NAME,\n  MONETARY_VALUE,\n  CREATED_AT_STR,\n  CREATED_AT_TS,\n  UPDATED_AT_STR,\n  UPDATED_AT_TS,\n  CLOSED_AT_STR,\n  CLOSED_AT_TS,\n  RAW,\n  PULLED_AT_TS\n)\nVALUES (\n  s.CLIENT_ID,\n  s.OPPORTUNITY_ID,\n  s.LOCATION_ID,\n  s.CONTACT_ID,\n  s.PIPELINE_ID,\n  s.PIPELINE_STAGE_ID,\n  s.PIPELINE_NAME,\n  s.PIPELINE_STAGE_NAME,\n  s.STATUS,\n  s.NAME,\n  s.MONETARY_VALUE,\n  s.CREATED_AT_STR,\n  s.CREATED_AT_TS,\n  s.UPDATED_AT_STR,\n  s.UPDATED_AT_TS,\n  s.CLOSED_AT_STR,\n  s.CLOSED_AT_TS,\n  s.RAW,\n  s.PULLED_AT_TS\n);\n"
       },
       "type": "n8n-nodes-base.snowflake",
       "typeVersion": 1,
-      "position": [872, -96],
+      "position": [1152, -96],
       "id": "ff1db32a-3a34-4522-a53f-a0eb10228857",
       "name": "Snowflake",
       "credentials": {
@@ -151,11 +195,11 @@
     },
     {
       "parameters": {
-        "jsCode": "// After Snowflake processes all items from this page,\n// prepare pagination state for the next page.\n// Reference 'Build Request Body' to get the CURRENT page\n// (this node re-executes each loop, so $() returns current iteration's value).\nconst currentPage = $('Build Request Body').first().json.page;\nconst limit = $('Build Request Body').first().json.limit;\nconst locationId = $('Build Request Body').first().json.locationId;\n\nreturn [{\n  json: {\n    page: currentPage + 1,\n    limit: limit,\n    locationId: locationId\n  }\n}];"
+        "jsCode": "// After Snowflake processes all items from this page,\n// prepare pagination state for the next page.\nconst currentPage = $('Build Request Body').first().json.page;\nconst limit = $('Build Request Body').first().json.limit;\nconst locationId = $('Build Request Body').first().json.locationId;\n\nreturn [{\n  json: {\n    page: currentPage + 1,\n    limit: limit,\n    locationId: locationId\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1056, -96],
+      "position": [1336, -96],
       "id": "a1b2c3d4-0003-4000-8000-000000000003",
       "name": "Next Page"
     },
@@ -166,7 +210,7 @@
       },
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
-      "position": [520, 64],
+      "position": [816, 64],
       "id": "43f6e11d-d00e-4fd6-8a37-4ae9e5fbf3f7",
       "name": "Stop and Error"
     }
@@ -185,6 +229,28 @@
       ]
     },
     "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pipelines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pipelines": {
+      "main": [
+        [
+          {
+            "node": "Build Pipe Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pipe Map": {
       "main": [
         [
           {
@@ -286,7 +352,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "4232b506-e18d-47b6-87c4-2d50617e710e",
+  "versionId": "5a3b4c5d-e6f7-48a9-b0c1-d2e3f4a5b6c7",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "0dd792e002b291da0dbecf5d75bc1f54e16c0266d8f8277263d78abbb783f658"
