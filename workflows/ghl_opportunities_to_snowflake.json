@@ -43,7 +43,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build the HTTP request body with guaranteed correct types.\n// Runs in V8 — completely bypasses n8n's expression parser and body serializer.\nconst page = Number($input.first().json.page);\nconst limit = Number($input.first().json.limit);\nconst locationId = String($input.first().json.locationId);\n\nreturn [{\n  json: {\n    requestBody: JSON.stringify({\n      locationId: locationId,\n      limit: limit,\n      page: page\n    }),\n    page: page,\n    limit: limit,\n    locationId: locationId\n  }\n}];"
+        "jsCode": "// Build the HTTP request body with guaranteed correct types.\n// Runs in V8 — completely bypasses n8n's expression parser.\n// Outputs a plain object (NOT a string) so n8n's JSON body mode\n// serializes it with correct number types.\nconst page = Number($input.first().json.page);\nconst limit = Number($input.first().json.limit);\nconst locationId = String($input.first().json.locationId);\n\nreturn [{\n  json: {\n    locationId: locationId,\n    limit: limit,\n    page: page\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -63,19 +63,15 @@
               "value": "Bearer pit-c7fe39b9-e8c8-443e-b3af-451b0b086ead"
             },
             {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
               "name": "Version",
               "value": "2021-07-28"
             }
           ]
         },
         "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "{{ $json.requestBody }}",
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ locationId: $json.locationId, limit: Number($json.limit), page: Number($json.page) }) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
