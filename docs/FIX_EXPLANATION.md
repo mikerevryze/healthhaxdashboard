@@ -1,161 +1,129 @@
 # GHL → Snowflake Pagination Fix
 
-## Problem Summary
+## What Was Wrong
 
-Two distinct failures when dynamically injecting `page` into the HTTP Request body for `POST /opportunities/search`:
+Your HTTP Request body field contained:
 
-| Mode | Symptom | Root Cause |
-|------|---------|------------|
-| **Using JSON** | `JSON parameter needs to be valid JSON` | n8n pre-validates raw JSON text **before** resolving `{{ }}` expressions |
-| **Using Fields Below** | `422: limit must be a number` | n8n serializes all field values as **strings**, GHL's `class-validator` rejects them |
-
----
-
-## Why This Happens in n8n v2.6.3
-
-### Problem 1: "Using JSON" mode
-
-When you write:
-
-```json
-{
-  "locationId": "flh4Lf5SwDi5n025GfVI",
-  "limit": 100,
-  "page": {{$json.page}}
-}
+```
+=  ={{ JSON.stringify({ locationId: $json.locationId, limit: $json.limit, page: $json.page }) }}
 ```
 
-n8n's expression engine works in two passes:
+GHL received this as the raw body:
 
-1. **Static validation pass**: n8n calls `JSON.parse()` on the raw text to check syntax.
-2. **Expression resolution pass**: n8n replaces `{{ }}` tokens with runtime values.
-
-The problem: `{{$json.page}}` is not valid JSON. `JSON.parse()` fails at step 1 before expressions are ever resolved. This is a known limitation of n8n's JSON body mode — you cannot embed bare expressions where a JSON value is expected.
-
-Wrapping it in quotes (`"{{$json.page}}"`) would pass JSON.parse but send the value as a **string**, which triggers the same 422 as Problem 2.
-
-### Problem 2: "Using Fields Below" mode
-
-n8n's "Using Fields Below" sends all parameter values through its internal serializer, which coerces everything to strings. The outbound request body becomes:
-
-```json
-{
-  "locationId": "flh4Lf5SwDi5n025GfVI",
-  "limit": "100",
-  "page": "1"
-}
+```
+"  ={"page":1}"
 ```
 
-The GHL API uses NestJS + `class-validator` with `@IsNumber()` / `@Min()` decorators on `limit` and `page`. These decorators perform strict type checking — `"100"` (string) ≠ `100` (number) — and return 422.
+### Three bugs in one line
+
+1. **`=  =` double prefix** — you have a literal `=`, whitespace, then `={{ }}`. The first `=` is not an expression marker in Raw body mode — it's literal text sent to the API.
+
+2. **`=` prefix not consumed in Raw body textarea** — In n8n, the `=` expression prefix (`={{ expr }}`) is only recognized in **parameter fields** (dropdowns, single-line inputs). In the Raw body **textarea**, n8n uses **template interpolation**: only `{{ }}` blocks are evaluated, everything else is literal. The `=` is sent as-is.
+
+3. **Missing `locationId` and `limit` in Set node** — Your "Edit Fields" only initialized `page` and `has_more`. `$json.locationId` and `$json.limit` were `undefined`, so `JSON.stringify` produced `{"page":1}` with the other fields missing.
+
+### Additional pagination bug
+
+Your "Edit Fields1" used:
+```
+$item(0).$node["Edit Fields"].json.page + 1
+```
+
+This always references the **original** "Edit Fields" output (page=1), so the page would always be calculated as `1 + 1 = 2`. The pagination would never advance past page 2.
 
 ---
 
 ## The Fix
 
-### HTTP Request Node Configuration
-
-| Setting | Value |
-|---------|-------|
-| **Method** | POST |
-| **URL** | `https://services.leadconnectorhq.com/opportunities/search` |
-| **Body Content Type** | `Raw / Custom` |
-| **MIME Type** | `application/json` |
-| **Body** | `={{ JSON.stringify({ locationId: $json.locationId, limit: $json.limit, page: $json.page }) }}` |
-
-### Why This Works
-
-The entire body field is a **single n8n expression** (starts with `=`). When n8n sees the `=` prefix:
-
-1. It skips static JSON validation entirely (the field is treated as an expression, not raw JSON).
-2. It evaluates the JavaScript expression at runtime.
-3. `JSON.stringify()` produces a valid JSON string with correct types:
-   - `locationId` → string (from Set node string field)
-   - `limit` → number (from Set node number field)
-   - `page` → number (from Set node number field)
-
-The `Raw / Custom` content type with MIME `application/json` ensures:
-- n8n does not attempt to parse or transform the body
-- The `Content-Type: application/json` header is set automatically
-- The raw output of `JSON.stringify()` is sent as-is
-
-### Critical Detail: Set Node Types
-
-The **Init Pagination** and **Increment Page** Set nodes must define `page` and `limit` as **Number** type fields, not String. This ensures `$json.page` resolves to a JavaScript number, so `JSON.stringify()` serializes it as `100` not `"100"`.
+### Architecture Change
 
 ```
-Set Node → Values → Number:
-  - name: page,  value: 1
-  - name: limit, value: 100
+BEFORE:
+  Trigger → Edit Fields → HTTP Request → Split Out → Code → Edit Fields1 → If → Snowflake → HTTP Request (loop)
+
+AFTER:
+  Trigger → Edit Fields → Build Request Body → HTTP Request → If → Split Out → Code → Snowflake → Next Page → Build Request Body (loop)
 ```
 
----
+Key changes:
+- **New "Build Request Body" Code node** — builds the JSON body string in V8 with correct types
+- **If moved BEFORE Split Out** — checks the HTTP response for opportunities before splitting
+- **New "Next Page" Code node** — replaces Edit Fields1, correctly increments page by referencing the current loop iteration
+- **Edit Fields** — now includes `limit` (number) and `locationId` (string)
 
-## Pagination Loop Logic
+### Node Details
 
+#### Edit Fields (Init)
 ```
-Init Pagination (page=1, limit=100, hasMore=true)
-    ↓
-GHL Search Opportunities (HTTP POST with expression body)
-    ↓
-Split Out (opportunities array)
-    ↓
-Map Fields (Code node: normalize to Snowflake schema)
-    ↓
-Snowflake MERGE (idempotent upsert on OPPORTUNITY_ID)
-    ↓
-Increment Page (page++, recompute hasMore from meta)
-    ↓
-More Pages? (IF: hasMore=true AND opportunities.length >= 1)
-    ├─ true → loop back to GHL Search Opportunities
-    └─ false → end
+page:       number = 1
+limit:      number = 100
+locationId: string = "flh4Lf5SwDi5n025GfVI"
 ```
 
-### Loop Termination
-
-The IF node checks two conditions (AND):
-
-1. `hasMore` is true (computed from `meta.total > meta.currentPage * limit`)
-2. The last response contained at least 1 opportunity
-
-This double-check prevents infinite loops if the API returns an empty page but `meta` is stale.
-
----
-
-## Alternative Fix: Code Node as Body Builder
-
-If you prefer not to use Raw body mode, you can insert a **Code node** immediately before the HTTP Request that outputs the body as a JSON object, then reference it:
-
+#### Build Request Body (Code node)
 ```javascript
-// Code node: "Build Request Body"
+const page = Number($input.first().json.page);
+const limit = Number($input.first().json.limit);
+const locationId = String($input.first().json.locationId);
+
 return [{
   json: {
-    requestBody: {
-      locationId: $json.locationId,
-      limit: Number($json.limit),
-      page: Number($json.page)
-    }
+    requestBody: JSON.stringify({
+      locationId: locationId,
+      limit: limit,
+      page: page
+    }),
+    page: page,
+    limit: limit,
+    locationId: locationId
   }
 }];
 ```
 
-Then in the HTTP Request node, use Raw body:
+This runs in V8 (pure JavaScript). No n8n expression parser, no body serializer, no type coercion bugs. `JSON.stringify` produces `{"locationId":"flh4Lf5SwDi5n025GfVI","limit":100,"page":1}` with correct number types.
+
+#### HTTP Request
 ```
-={{ JSON.stringify($json.requestBody) }}
+Body Content Type: Raw / Custom
+MIME Type:         application/json
+Body:              {{ $json.requestBody }}
 ```
 
-This adds an extra node but makes the type coercion explicit with `Number()`.
+**No `=` prefix.** Just `{{ $json.requestBody }}`. The `{{ }}` template interpolation pastes the pre-built JSON string directly into the body. No transformation, no wrapping, no quoting.
+
+#### If (check for more data)
+```
+Condition: {{ ($json.opportunities || []).length }} > 0
+```
+
+Checks the raw HTTP response BEFORE Split Out. If the API returns an empty `opportunities` array, routes to Stop and Error.
+
+#### Next Page (Code node, after Snowflake)
+```javascript
+const currentPage = $('Build Request Body').first().json.page;
+const limit = $('Build Request Body').first().json.limit;
+const locationId = $('Build Request Body').first().json.locationId;
+
+return [{
+  json: {
+    page: currentPage + 1,
+    limit: limit,
+    locationId: locationId
+  }
+}];
+```
+
+References `$('Build Request Body')` which returns the **current loop iteration's** output (not a fixed value). Outputs a single item with page+1 to feed back into Build Request Body.
 
 ---
 
-## Verification Checklist
+## Why Each Failed Approach Cannot Work
 
-- [ ] HTTP Request Body Content Type = **Raw / Custom**
-- [ ] MIME Type = **application/json**
-- [ ] Body starts with `=` (expression mode)
-- [ ] Body uses `JSON.stringify()` to serialize
-- [ ] Set nodes define `page` and `limit` as **Number** type
-- [ ] `locationId` is defined as **String** type
-- [ ] Authorization header includes valid GHL API key
-- [ ] `Version` header is set to `2021-07-28`
-- [ ] IF node checks both `hasMore` AND `opportunities.length >= 1`
-- [ ] Snowflake credential ID is configured in the MERGE node
+| Approach | Why it fails |
+|----------|-------------|
+| Raw body with `={{ expr }}` | `=` is literal text in textarea mode, gets sent to API |
+| Raw body with `= ={{ expr }}` | Same — doubled `=` both appear in output |
+| "Using JSON" with `{ "page": {{expr}} }` | n8n's JSON.parse() pre-validation rejects `{{expr}}` as invalid JSON |
+| "Using JSON" with `"page": "{{expr}}"` | Sends page as string `"1"` — GHL 422 |
+| "Using Fields Below" | All values coerced to strings — GHL 422 |
+| Code node + `{{ $json.requestBody }}` in Raw | Works — template interpolation of a pre-built string |
