@@ -21,7 +21,7 @@
             },
             {
               "name": "time_range",
-              "value": "{\"since\":\"2020-01-01\",\"until\":\"2026-02-21\"}"
+              "value": "last_180d"
             },
             {
               "name": "time_increment",

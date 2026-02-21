@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Trophy,
@@ -12,7 +13,16 @@ import { FunnelChart } from "@/components/FunnelChart";
 import { GoalCalculator } from "@/components/GoalCalculator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Metrics, MetaMetrics, FunnelStage } from "@shared/schema";
+
+const DATE_RANGES = [
+  { value: "30", label: "30d" },
+  { value: "60", label: "60d" },
+  { value: "90", label: "90d" },
+  { value: "120", label: "120d" },
+  { value: "0", label: "All" },
+] as const;
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -66,18 +76,21 @@ function ErrorState({ message }: { message: string }) {
 }
 
 export default function Dashboard() {
+  const [days, setDays] = useState("30");
+  const querySuffix = days !== "0" ? `?days=${days}` : "";
+
   const { data: metrics, isLoading: metricsLoading, error: metricsError } = useQuery<Metrics>({
-    queryKey: ["/api/metrics"],
+    queryKey: [`/api/metrics${querySuffix}`],
     refetchInterval: 60000,
   });
 
   const { data: meta } = useQuery<MetaMetrics>({
-    queryKey: ["/api/meta"],
+    queryKey: [`/api/meta${querySuffix}`],
     refetchInterval: 60000,
   });
 
   const { data: funnel, isLoading: funnelLoading } = useQuery<FunnelStage[]>({
-    queryKey: ["/api/funnel"],
+    queryKey: [`/api/funnel${querySuffix}`],
     refetchInterval: 60000,
   });
 
@@ -92,13 +105,28 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Performance Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
-        </p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Performance Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
+          </p>
+        </div>
+        <ToggleGroup
+          type="single"
+          value={days}
+          onValueChange={(v) => { if (v) setDays(v); }}
+          variant="outline"
+          size="sm"
+        >
+          {DATE_RANGES.map((r) => (
+            <ToggleGroupItem key={r.value} value={r.value}>
+              {r.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

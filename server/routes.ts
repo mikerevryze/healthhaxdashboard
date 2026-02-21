@@ -9,8 +9,13 @@ export async function registerRoutes(
 ): Promise<Server> {
   // KPI metrics from GHL opportunities
   // Uses PIPELINE_STAGE_NAME to detect won/lost since STATUS may not reflect stage
-  app.get("/api/metrics", async (_req, res) => {
+  app.get("/api/metrics", async (req, res) => {
     try {
+      const days = parseInt(req.query.days as string) || 0;
+      const dateFilter = days > 0
+        ? `WHERE CREATED_AT_TS >= DATEADD('day', -${days}, CURRENT_DATE())`
+        : "";
+
       const rows = await executeQuery<{
         TOTAL_LEADS: number;
         CLOSED_WON: number;
@@ -39,6 +44,7 @@ export async function registerRoutes(
           END) AS OPEN_DEALS,
           COALESCE(SUM(MONETARY_VALUE), 0) AS TOTAL_VALUE
         FROM GHL_OPPORTUNITIES
+        ${dateFilter}
       `);
 
       const row = rows[0];
@@ -56,8 +62,13 @@ export async function registerRoutes(
   });
 
   // Meta ads aggregate metrics from META_ADS_DAILY
-  app.get("/api/meta", async (_req, res) => {
+  app.get("/api/meta", async (req, res) => {
     try {
+      const days = parseInt(req.query.days as string) || 0;
+      const dateFilter = days > 0
+        ? `WHERE DATE_START >= DATEADD('day', -${days}, CURRENT_DATE())`
+        : "";
+
       const rows = await executeQuery<{
         TOTAL_SPEND: number;
         TOTAL_LEADS: number;
@@ -66,6 +77,7 @@ export async function registerRoutes(
           COALESCE(SUM(SPEND), 0)  AS TOTAL_SPEND,
           COALESCE(SUM(LEADS), 0)  AS TOTAL_LEADS
         FROM META_ADS_DAILY
+        ${dateFilter}
       `);
 
       const row = rows[0];
@@ -85,8 +97,13 @@ export async function registerRoutes(
   });
 
   // Pipeline funnel - deals by stage (excludes lost)
-  app.get("/api/funnel", async (_req, res) => {
+  app.get("/api/funnel", async (req, res) => {
     try {
+      const days = parseInt(req.query.days as string) || 0;
+      const dateFilter = days > 0
+        ? `AND CREATED_AT_TS >= DATEADD('day', -${days}, CURRENT_DATE())`
+        : "";
+
       const rows = await executeQuery<{
         PIPELINE_NAME: string;
         PIPELINE_STAGE_NAME: string;
@@ -102,6 +119,7 @@ export async function registerRoutes(
         WHERE STATUS != 'lost'
           AND PIPELINE_STAGE_NAME NOT ILIKE '%Closed-Lost%'
           AND PIPELINE_STAGE_NAME NOT ILIKE '%Closed Lost%'
+          ${dateFilter}
         GROUP BY PIPELINE_NAME, PIPELINE_STAGE_NAME
         ORDER BY PIPELINE_NAME, OPP_COUNT DESC
       `);
