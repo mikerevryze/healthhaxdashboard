@@ -20,8 +20,8 @@
               "value": "ad"
             },
             {
-              "name": "time_range",
-              "value": "last_180d"
+              "name": "date_preset",
+              "value": "maximum"
             },
             {
               "name": "time_increment",
