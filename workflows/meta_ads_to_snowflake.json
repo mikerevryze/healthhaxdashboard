@@ -20,8 +20,8 @@
               "value": "ad"
             },
             {
-              "name": "date_preset",
-              "value": "last_30d"
+              "name": "time_range",
+              "value": "{\"since\":\"2020-01-01\",\"until\":\"2026-02-21\"}"
             },
             {
               "name": "time_increment",
@@ -41,7 +41,16 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "pagination": {
+            "paginationMode": "responseContainsNextURL",
+            "nextURL": "={{ $response.body.paging.next }}",
+            "paginationCompleteWhen": "receiveSpecificStatusCodes",
+            "statusCodesWhenComplete": "",
+            "limitPagesFetched": true,
+            "maxRequests": 100
+          }
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
