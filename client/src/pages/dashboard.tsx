@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
   Trophy,
   DollarSign,
@@ -11,18 +13,10 @@ import {
 import { MetricCard } from "@/components/MetricCard";
 import { FunnelChart } from "@/components/FunnelChart";
 import { GoalCalculator } from "@/components/GoalCalculator";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Metrics, MetaMetrics, FunnelStage } from "@shared/schema";
-
-const DATE_RANGES = [
-  { value: "30", label: "30d" },
-  { value: "60", label: "60d" },
-  { value: "90", label: "90d" },
-  { value: "120", label: "120d" },
-  { value: "0", label: "All" },
-] as const;
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -76,8 +70,31 @@ function ErrorState({ message }: { message: string }) {
 }
 
 export default function Dashboard() {
-  const [days, setDays] = useState("30");
-  const querySuffix = days !== "0" ? `?days=${days}` : "";
+  // null = custom date range active, number = preset days
+  const [activeDays, setActiveDays] = useState<number | null>(30);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
+  // Build query string based on active selection
+  let querySuffix = "";
+  if (activeDays !== null) {
+    querySuffix = activeDays > 0 ? `?days=${activeDays}` : "";
+  } else if (dateRange?.from && dateRange?.to) {
+    const start = format(dateRange.from, "yyyy-MM-dd");
+    const end = format(dateRange.to, "yyyy-MM-dd");
+    querySuffix = `?start_date=${start}&end_date=${end}`;
+  }
+
+  const handlePresetChange = (days: number) => {
+    setActiveDays(days);
+    setDateRange(undefined);
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    if (range?.from) {
+      setActiveDays(null);
+    }
+  };
 
   const { data: metrics, isLoading: metricsLoading, error: metricsError } = useQuery<Metrics>({
     queryKey: [`/api/metrics${querySuffix}`],
@@ -114,19 +131,12 @@ export default function Dashboard() {
             GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
           </p>
         </div>
-        <ToggleGroup
-          type="single"
-          value={days}
-          onValueChange={(v) => { if (v) setDays(v); }}
-          variant="outline"
-          size="sm"
-        >
-          {DATE_RANGES.map((r) => (
-            <ToggleGroupItem key={r.value} value={r.value}>
-              {r.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <DateRangePicker
+          dateRange={dateRange}
+          onDateRangeChange={handleDateRangeChange}
+          activeDays={activeDays}
+          onPresetChange={handlePresetChange}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
