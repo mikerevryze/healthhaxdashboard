@@ -5,86 +5,39 @@
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [-256, -96],
-      "id": "m1a00000-0000-4000-8000-000000000001",
+      "position": [0, 0],
+      "id": "19913edb-fb7a-43fa-8a64-94e10ed3567d",
       "name": "When clicking 'Execute workflow'"
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "m1a00000-0001-4000-8000-000000000001",
-              "name": "ad_account_id",
-              "value": "1386514806549794",
-              "type": "string"
-            },
-            {
-              "id": "m1a00000-0001-4000-8000-000000000002",
-              "name": "access_token",
-              "value": "YOUR_META_ACCESS_TOKEN",
-              "type": "string"
-            },
-            {
-              "id": "m1a00000-0001-4000-8000-000000000003",
-              "name": "days_back",
-              "value": 30,
-              "type": "number"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [-96, -96],
-      "id": "m1a00000-0002-4000-8000-000000000001",
-      "name": "Config"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Build date range: from (days_back ago) to yesterday\nconst daysBack = $input.first().json.days_back || 30;\nconst now = new Date();\n\nconst since = new Date(now);\nsince.setDate(since.getDate() - daysBack);\n\nconst until = new Date(now);\nuntil.setDate(until.getDate() - 1);\n\nconst fmt = (d) => d.toISOString().slice(0, 10);\n\nreturn [{\n  json: {\n    ad_account_id: $input.first().json.ad_account_id,\n    access_token: $input.first().json.access_token,\n    since: fmt(since),\n    until: fmt(until)\n  }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [64, -96],
-      "id": "m1a00000-0003-4000-8000-000000000001",
-      "name": "Build Date Range"
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "=https://graph.facebook.com/v21.0/act_{{ $json.ad_account_id }}/insights",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": []
-        },
+        "url": "https://graph.facebook.com/v21.0/act_1386514806549794/insights",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
             {
-              "name": "access_token",
-              "value": "={{ $json.access_token }}"
-            },
-            {
-              "name": "fields",
-              "value": "account_id,account_currency,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,actions"
-            },
-            {
               "name": "level",
               "value": "ad"
+            },
+            {
+              "name": "date_preset",
+              "value": "last_30d"
             },
             {
               "name": "time_increment",
               "value": "1"
             },
             {
-              "name": "time_range",
-              "value": "={{ JSON.stringify({ since: $json.since, until: $json.until }) }}"
+              "name": "fields",
+              "value": "account_id,account_currency,date_start,date_stop,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,actions"
             },
             {
               "name": "limit",
               "value": "500"
+            },
+            {
+              "name": "access_token",
+              "value": "YOUR_META_ACCESS_TOKEN"
             }
           ]
         },
@@ -92,40 +45,9 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [224, -96],
-      "id": "m1a00000-0004-4000-8000-000000000001",
-      "name": "Fetch Meta Insights",
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "m1a00000-0005-4000-8000-000000000001",
-              "leftValue": "={{ ($json.data || []).length }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [384, -96],
-      "id": "m1a00000-0006-4000-8000-000000000001",
-      "name": "Has Data?"
+      "position": [220, 0],
+      "id": "a3acb439-8caa-46c7-9cd2-0aec892972e4",
+      "name": "HTTP Request"
     },
     {
       "parameters": {
@@ -134,19 +56,19 @@
       },
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [544, -96],
-      "id": "m1a00000-0007-4000-8000-000000000001",
-      "name": "Split Out Rows"
+      "position": [440, 0],
+      "id": "6495db94-da4b-4d2c-b5d5-af83ab738a48",
+      "name": "Split Out"
     },
     {
       "parameters": {
-        "jsCode": "// Transform Meta Insights rows into Snowflake-friendly format (ad-level).\n// Extract 'lead' count from the actions array.\n// All string fields are escaped with .replace(/'/g, \"''\") for safe SQL quoting.\nconst config = $('Config').first().json;\n\nreturn items.map(item => {\n  const row = item.json;\n\n  // actions is an array like [{action_type:'lead', value:'3'}, ...]\n  const actions = row.actions || [];\n  const leadAction = actions.find(a =>\n    a.action_type === 'lead' ||\n    a.action_type === 'onsite_conversion.lead_grouped' ||\n    a.action_type === 'offsite_conversion.fb_pixel_lead'\n  );\n  const leads = leadAction ? Number(leadAction.value) : 0;\n\n  return {\n    json: {\n      pulled_at: new Date().toISOString(),\n      date_start: row.date_start,\n      date_stop: row.date_stop,\n      ad_account_id: row.account_id || config.ad_account_id,\n      currency: row.account_currency || 'USD',\n      level: 'ad',\n      campaign_id: row.campaign_id || 'unknown',\n      campaign_name: (row.campaign_name || 'Unknown').replace(/'/g, \"''\"),\n      adset_id: row.adset_id || 'unknown',\n      adset_name: (row.adset_name || 'Unknown').replace(/'/g, \"''\"),\n      ad_id: row.ad_id || 'unknown',\n      ad_name: (row.ad_name || 'Unknown').replace(/'/g, \"''\"),\n      impressions: Number(row.impressions) || 0,\n      clicks: Number(row.clicks) || 0,\n      spend: Number(row.spend) || 0,\n      leads: leads,\n      purchases: 0,\n      raw_json: JSON.stringify(row).replace(/'/g, \"''\")\n    }\n  };\n});"
+        "jsCode": "const r = $json;\nconst pulledAt = new Date().toISOString();\n\nfunction getAction(actions, type) {\n  const a = (actions || []).find(x => x.action_type === type);\n  return a ? Number(a.value) : 0;\n}\n\nreturn {\n  pulled_at: pulledAt,\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  ad_account_id: r.account_id,\n  currency: r.account_currency,\n  level: 'ad',\n\n  campaign_id: r.campaign_id,\n  campaign_name: (r.campaign_name || 'Unknown').replace(/'/g, \"''\"),\n  adset_id: r.adset_id,\n  adset_name: (r.adset_name || 'Unknown').replace(/'/g, \"''\"),\n  ad_id: r.ad_id,\n  ad_name: (r.ad_name || 'Unknown').replace(/'/g, \"''\"),\n\n  impressions: Number(r.impressions || 0),\n  clicks: Number(r.clicks || 0),\n  spend: Number(r.spend || 0),\n\n  leads:\n    getAction(r.actions, 'lead') +\n    getAction(r.actions, 'onsite_conversion.lead_grouped') +\n    getAction(r.actions, 'offsite_conversion.fb_pixel_lead'),\n\n  purchases: 0,\n  raw_json: JSON.stringify(r).replace(/'/g, \"''\")\n};\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [704, -96],
-      "id": "m1a00000-0008-4000-8000-000000000001",
-      "name": "Transform for Snowflake"
+      "position": [660, 0],
+      "id": "89335886-a185-44c1-b6cd-b61e056cf8de",
+      "name": "Code in JavaScript"
     },
     {
       "parameters": {
@@ -155,8 +77,8 @@
       },
       "type": "n8n-nodes-base.snowflake",
       "typeVersion": 1,
-      "position": [864, -96],
-      "id": "m1a00000-0009-4000-8000-000000000001",
+      "position": [880, 0],
+      "id": "c5be524d-0c06-49af-a3ac-d89073083a0d",
       "name": "Snowflake",
       "credentials": {
         "snowflake": {
@@ -164,72 +86,6 @@
           "name": "Snowflake account"
         }
       }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Check if there's a next page of results (Meta paginates at 500+)\nconst response = $('Fetch Meta Insights').first().json;\nconst nextUrl = response?.paging?.next;\n\nif (nextUrl) {\n  return [{ json: { next_url: nextUrl } }];\n}\n\n// No more pages — stop\nreturn [];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1024, -96],
-      "id": "m1a00000-0010-4000-8000-000000000001",
-      "name": "Check Next Page"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "m1a00000-0011-4000-8000-000000000001",
-              "leftValue": "={{ ($json.next_url || '').length }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [1184, -96],
-      "id": "m1a00000-0012-4000-8000-000000000001",
-      "name": "More Pages?"
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $json.next_url }}",
-        "sendHeaders": false,
-        "sendQuery": false,
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [1344, -96],
-      "id": "m1a00000-0013-4000-8000-000000000001",
-      "name": "Fetch Next Page",
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "errorType": "=errorMessage",
-        "errorMessage": "={{ \"No data returned from Meta Ads API\" }}"
-      },
-      "type": "n8n-nodes-base.stopAndError",
-      "typeVersion": 1,
-      "position": [544, 64],
-      "id": "m1a00000-0014-4000-8000-000000000001",
-      "name": "No Data"
     }
   ],
   "pinData": {},
@@ -238,125 +94,40 @@
       "main": [
         [
           {
-            "node": "Config",
+            "node": "HTTP Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Config": {
+    "HTTP Request": {
       "main": [
         [
           {
-            "node": "Build Date Range",
+            "node": "Split Out",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build Date Range": {
+    "Split Out": {
       "main": [
         [
           {
-            "node": "Fetch Meta Insights",
+            "node": "Code in JavaScript",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fetch Meta Insights": {
-      "main": [
-        [
-          {
-            "node": "Has Data?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Has Data?": {
-      "main": [
-        [
-          {
-            "node": "Split Out Rows",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "No Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Split Out Rows": {
-      "main": [
-        [
-          {
-            "node": "Transform for Snowflake",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform for Snowflake": {
+    "Code in JavaScript": {
       "main": [
         [
           {
             "node": "Snowflake",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Snowflake": {
-      "main": [
-        [
-          {
-            "node": "Check Next Page",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Next Page": {
-      "main": [
-        [
-          {
-            "node": "More Pages?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "More Pages?": {
-      "main": [
-        [
-          {
-            "node": "Fetch Next Page",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "Fetch Next Page": {
-      "main": [
-        [
-          {
-            "node": "Has Data?",
             "type": "main",
             "index": 0
           }
@@ -370,11 +141,11 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "m1a00000-0000-4000-8000-000000000099",
+  "versionId": "696f542d-f8c4-4bba-ac22-c5390eb56118",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "0dd792e002b291da0dbecf5d75bc1f54e16c0266d8f8277263d78abbb783f658"
   },
-  "id": "metaAdsWorkflow001",
+  "id": "tOrc1wumv_tA19B_Q6Vjw",
   "tags": []
 }
