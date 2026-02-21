@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
   Trophy,
   DollarSign,
@@ -6,10 +9,12 @@ import {
   XCircle,
   TrendingUp,
   Megaphone,
+  MousePointerClick,
 } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { FunnelChart } from "@/components/FunnelChart";
 import { GoalCalculator } from "@/components/GoalCalculator";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import type { Metrics, MetaMetrics, FunnelStage } from "@shared/schema";
@@ -31,7 +36,7 @@ function LoadingSkeleton() {
         <Skeleton className="h-7 w-48" />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <Card key={i} className="border-card-border bg-card p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 space-y-3">
@@ -66,18 +71,44 @@ function ErrorState({ message }: { message: string }) {
 }
 
 export default function Dashboard() {
+  // null = custom date range active, number = preset days
+  const [activeDays, setActiveDays] = useState<number | null>(30);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
+  // Build query string based on active selection
+  let querySuffix = "";
+  if (activeDays !== null) {
+    querySuffix = activeDays > 0 ? `?days=${activeDays}` : "";
+  } else if (dateRange?.from && dateRange?.to) {
+    const start = format(dateRange.from, "yyyy-MM-dd");
+    const end = format(dateRange.to, "yyyy-MM-dd");
+    querySuffix = `?start_date=${start}&end_date=${end}`;
+  }
+
+  const handlePresetChange = (days: number) => {
+    setActiveDays(days);
+    setDateRange(undefined);
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    if (range?.from) {
+      setActiveDays(null);
+    }
+  };
+
   const { data: metrics, isLoading: metricsLoading, error: metricsError } = useQuery<Metrics>({
-    queryKey: ["/api/metrics"],
+    queryKey: [`/api/metrics${querySuffix}`],
     refetchInterval: 60000,
   });
 
   const { data: meta } = useQuery<MetaMetrics>({
-    queryKey: ["/api/meta"],
+    queryKey: [`/api/meta${querySuffix}`],
     refetchInterval: 60000,
   });
 
   const { data: funnel, isLoading: funnelLoading } = useQuery<FunnelStage[]>({
-    queryKey: ["/api/funnel"],
+    queryKey: [`/api/funnel${querySuffix}`],
     refetchInterval: 60000,
   });
 
@@ -90,54 +121,93 @@ export default function Dashboard() {
       ? ((metrics.closed_won / metrics.total_leads) * 100).toFixed(1)
       : "0.0";
 
+  // Separate paid (Meta) leads from organic leads
+  const metaLeads = meta?.total_leads ?? 0;
+  const organicLeads = Math.max(0, metrics.total_leads - metaLeads);
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Performance Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
-        </p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Performance Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
+          </p>
+        </div>
+        <DateRangePicker
+          dateRange={dateRange}
+          onDateRangeChange={handleDateRangeChange}
+          activeDays={activeDays}
+          onPresetChange={handlePresetChange}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <MetricCard
-          title="Total Leads"
-          value={metrics.total_leads.toLocaleString()}
-          icon={Users}
-          subtitle="All opportunities in pipeline"
-        />
-        <MetricCard
-          title="Closed Won"
-          value={metrics.closed_won.toLocaleString()}
-          icon={Trophy}
-          subtitle="Converted memberships"
-        />
-        <MetricCard
-          title="Conversion Rate"
-          value={`${conversionRate}%`}
-          icon={TrendingUp}
-          subtitle="Won / Total leads"
-        />
-        <MetricCard
-          title="Total Value"
-          value={formatCurrency(metrics.total_value)}
-          icon={DollarSign}
-          subtitle="Sum of all deal values"
-        />
-        <MetricCard
-          title="Meta Ad Spend"
-          value={meta ? formatCurrency(meta.total_spend) : "--"}
-          icon={Megaphone}
-          subtitle="Total Facebook/Instagram spend"
-        />
-        <MetricCard
-          title="Meta CPL"
-          value={meta ? formatCurrency(meta.cpl) : "--"}
-          icon={DollarSign}
-          subtitle="Cost per lead from Meta"
-        />
+      {/* Lead Source Breakdown */}
+      <div className="mb-4">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          Lead Sources
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            title="Total Leads"
+            value={metrics.total_leads.toLocaleString()}
+            icon={Users}
+            subtitle="All opportunities in pipeline"
+          />
+          <MetricCard
+            title="Meta Leads"
+            value={metaLeads.toLocaleString()}
+            icon={Megaphone}
+            subtitle="Paid leads from Facebook/Instagram"
+          />
+          <MetricCard
+            title="Organic Leads"
+            value={organicLeads.toLocaleString()}
+            icon={MousePointerClick}
+            subtitle="Non-paid / other sources"
+          />
+          <MetricCard
+            title="Conversion Rate"
+            value={`${conversionRate}%`}
+            icon={TrendingUp}
+            subtitle="Won / Total leads"
+          />
+        </div>
+      </div>
+
+      {/* Deal & Spend Metrics */}
+      <div className="mb-4">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          Deals &amp; Spend
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            title="Closed Won"
+            value={metrics.closed_won.toLocaleString()}
+            icon={Trophy}
+            subtitle="Converted memberships"
+          />
+          <MetricCard
+            title="Total Value"
+            value={formatCurrency(metrics.total_value)}
+            icon={DollarSign}
+            subtitle="Sum of all deal values"
+          />
+          <MetricCard
+            title="Meta Ad Spend"
+            value={meta ? formatCurrency(meta.total_spend) : "--"}
+            icon={Megaphone}
+            subtitle="Total Facebook/Instagram spend"
+          />
+          <MetricCard
+            title="Meta CPL"
+            value={meta ? formatCurrency(meta.cpl) : "--"}
+            icon={DollarSign}
+            subtitle="Cost per lead from Meta"
+          />
+        </div>
       </div>
 
       {/* Pipeline Funnel */}
