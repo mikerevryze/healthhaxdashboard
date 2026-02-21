@@ -20,8 +20,12 @@
               "value": "ad"
             },
             {
-              "name": "date_preset",
-              "value": "last_90d"
+              "name": "time_range[since]",
+              "value": "2024-08-01"
+            },
+            {
+              "name": "time_range[until]",
+              "value": "2026-02-21"
             },
             {
               "name": "time_increment",
