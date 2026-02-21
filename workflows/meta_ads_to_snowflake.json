@@ -20,8 +20,8 @@
               "value": "ad"
             },
             {
-              "name": "date_preset",
-              "value": "maximum"
+              "name": "time_range",
+              "value": "{\"since\":\"2024-08-01\",\"until\":\"2026-02-21\"}"
             },
             {
               "name": "time_increment",
