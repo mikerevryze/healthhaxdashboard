@@ -1,5 +1,5 @@
 {
-  "name": "CL_HealthHax_Meta_Ads_Daily",
+  "name": "CL_HealthHax_MetaAds_to_Snowflake",
   "nodes": [
     {
       "parameters": {},
@@ -16,7 +16,7 @@
             {
               "id": "m1a00000-0001-4000-8000-000000000001",
               "name": "ad_account_id",
-              "value": "YOUR_AD_ACCOUNT_ID",
+              "value": "1386514806549794",
               "type": "string"
             },
             {
@@ -68,11 +68,11 @@
             },
             {
               "name": "fields",
-              "value": "campaign_id,campaign_name,spend,impressions,clicks,actions"
+              "value": "account_id,account_currency,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,impressions,clicks,spend,actions"
             },
             {
               "name": "level",
-              "value": "campaign"
+              "value": "ad"
             },
             {
               "name": "time_increment",
@@ -140,7 +140,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Transform Meta Insights rows into Snowflake-friendly format.\n// Extract 'lead' count from the actions array.\nconst config = $('Config').first().json;\n\nreturn items.map(item => {\n  const row = item.json;\n\n  // actions is an array like [{action_type:'lead', value:'3'}, ...]\n  const actions = row.actions || [];\n  const leadAction = actions.find(a =>\n    a.action_type === 'lead' ||\n    a.action_type === 'onsite_conversion.lead_grouped' ||\n    a.action_type === 'offsite_conversion.fb_pixel_lead'\n  );\n  const leads = leadAction ? Number(leadAction.value) : 0;\n\n  return {\n    json: {\n      date_key: row.date_start,\n      ad_account_id: config.ad_account_id,\n      campaign_id: row.campaign_id || 'unknown',\n      campaign_name: (row.campaign_name || 'Unknown').replace(/'/g, \"''\"),\n      spend: Number(row.spend) || 0,\n      impressions: Number(row.impressions) || 0,\n      clicks: Number(row.clicks) || 0,\n      leads: leads,\n      raw: JSON.stringify(row).replace(/'/g, \"''\"),\n      pulled_at_ts: new Date().toISOString()\n    }\n  };\n});"
+        "jsCode": "// Transform Meta Insights rows into Snowflake-friendly format (ad-level).\n// Extract 'lead' count from the actions array.\n// All string fields are escaped with .replace(/'/g, \"''\") for safe SQL quoting.\nconst config = $('Config').first().json;\n\nreturn items.map(item => {\n  const row = item.json;\n\n  // actions is an array like [{action_type:'lead', value:'3'}, ...]\n  const actions = row.actions || [];\n  const leadAction = actions.find(a =>\n    a.action_type === 'lead' ||\n    a.action_type === 'onsite_conversion.lead_grouped' ||\n    a.action_type === 'offsite_conversion.fb_pixel_lead'\n  );\n  const leads = leadAction ? Number(leadAction.value) : 0;\n\n  return {\n    json: {\n      pulled_at: new Date().toISOString(),\n      date_start: row.date_start,\n      date_stop: row.date_stop,\n      ad_account_id: row.account_id || config.ad_account_id,\n      currency: row.account_currency || 'USD',\n      level: 'ad',\n      campaign_id: row.campaign_id || 'unknown',\n      campaign_name: (row.campaign_name || 'Unknown').replace(/'/g, \"''\"),\n      adset_id: row.adset_id || 'unknown',\n      adset_name: (row.adset_name || 'Unknown').replace(/'/g, \"''\"),\n      ad_id: row.ad_id || 'unknown',\n      ad_name: (row.ad_name || 'Unknown').replace(/'/g, \"''\"),\n      impressions: Number(row.impressions) || 0,\n      clicks: Number(row.clicks) || 0,\n      spend: Number(row.spend) || 0,\n      leads: leads,\n      purchases: 0,\n      raw_json: JSON.stringify(row).replace(/'/g, \"''\")\n    }\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -151,7 +151,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "MERGE INTO REVRYZE.RAW.META_ADS_DAILY t\nUSING (\n  SELECT\n    TO_DATE('{{$json.date_key}}') AS DATE_KEY,\n    '{{$json.ad_account_id}}' AS AD_ACCOUNT_ID,\n    '{{$json.campaign_id}}' AS CAMPAIGN_ID,\n    '{{$json.campaign_name}}' AS CAMPAIGN_NAME,\n    TRY_TO_NUMBER('{{$json.spend}}', 18, 2) AS SPEND,\n    TRY_TO_NUMBER('{{$json.impressions}}', 18, 0) AS IMPRESSIONS,\n    TRY_TO_NUMBER('{{$json.clicks}}', 18, 0) AS CLICKS,\n    TRY_TO_NUMBER('{{$json.leads}}', 18, 0) AS LEADS,\n    TRY_PARSE_JSON('{{$json.raw}}') AS RAW,\n    TRY_TO_TIMESTAMP_NTZ('{{$json.pulled_at_ts}}') AS PULLED_AT_TS\n) s\n\nON t.DATE_KEY = s.DATE_KEY\n  AND t.AD_ACCOUNT_ID = s.AD_ACCOUNT_ID\n  AND t.CAMPAIGN_ID = s.CAMPAIGN_ID\n\nWHEN MATCHED THEN UPDATE SET\n  CAMPAIGN_NAME = s.CAMPAIGN_NAME,\n  SPEND = s.SPEND,\n  IMPRESSIONS = s.IMPRESSIONS,\n  CLICKS = s.CLICKS,\n  LEADS = s.LEADS,\n  RAW = s.RAW,\n  PULLED_AT_TS = s.PULLED_AT_TS\n\nWHEN NOT MATCHED THEN INSERT (\n  DATE_KEY, AD_ACCOUNT_ID, CAMPAIGN_ID, CAMPAIGN_NAME,\n  SPEND, IMPRESSIONS, CLICKS, LEADS,\n  RAW, PULLED_AT_TS\n)\nVALUES (\n  s.DATE_KEY, s.AD_ACCOUNT_ID, s.CAMPAIGN_ID, s.CAMPAIGN_NAME,\n  s.SPEND, s.IMPRESSIONS, s.CLICKS, s.LEADS,\n  s.RAW, s.PULLED_AT_TS\n);\n"
+        "query": "MERGE INTO REVRYZE.RAW.META_ADS_DAILY t\nUSING (\n  SELECT\n    TRY_TO_TIMESTAMP_NTZ('{{$json.pulled_at}}')   AS PULLED_AT,\n    TO_DATE('{{$json.date_start}}')                AS DATE_START,\n    TO_DATE('{{$json.date_stop}}')                 AS DATE_STOP,\n    '{{$json.ad_account_id}}'                      AS AD_ACCOUNT_ID,\n    '{{$json.currency}}'                           AS CURRENCY,\n    '{{$json.level}}'                              AS LEVEL,\n    '{{$json.campaign_id}}'                        AS CAMPAIGN_ID,\n    '{{$json.campaign_name}}'                      AS CAMPAIGN_NAME,\n    '{{$json.adset_id}}'                           AS ADSET_ID,\n    '{{$json.adset_name}}'                         AS ADSET_NAME,\n    '{{$json.ad_id}}'                              AS AD_ID,\n    '{{$json.ad_name}}'                            AS AD_NAME,\n    TRY_TO_NUMBER('{{$json.impressions}}', 18, 0)  AS IMPRESSIONS,\n    TRY_TO_NUMBER('{{$json.clicks}}', 18, 0)       AS CLICKS,\n    TRY_TO_NUMBER('{{$json.spend}}', 18, 2)        AS SPEND,\n    TRY_TO_NUMBER('{{$json.leads}}', 18, 0)        AS LEADS,\n    TRY_TO_NUMBER('{{$json.purchases}}', 18, 0)    AS PURCHASES,\n    TRY_PARSE_JSON('{{$json.raw_json}}')           AS RAW_JSON\n) s\nON  t.DATE_START     = s.DATE_START\nAND t.AD_ACCOUNT_ID  = s.AD_ACCOUNT_ID\nAND t.AD_ID          = s.AD_ID\n\nWHEN MATCHED THEN UPDATE SET\n  PULLED_AT     = s.PULLED_AT,\n  DATE_STOP     = s.DATE_STOP,\n  CURRENCY      = s.CURRENCY,\n  LEVEL         = s.LEVEL,\n  CAMPAIGN_ID   = s.CAMPAIGN_ID,\n  CAMPAIGN_NAME = s.CAMPAIGN_NAME,\n  ADSET_ID      = s.ADSET_ID,\n  ADSET_NAME    = s.ADSET_NAME,\n  AD_NAME       = s.AD_NAME,\n  IMPRESSIONS   = s.IMPRESSIONS,\n  CLICKS        = s.CLICKS,\n  SPEND         = s.SPEND,\n  LEADS         = s.LEADS,\n  PURCHASES     = s.PURCHASES,\n  RAW_JSON      = s.RAW_JSON\n\nWHEN NOT MATCHED THEN INSERT (\n  PULLED_AT, DATE_START, DATE_STOP, AD_ACCOUNT_ID, CURRENCY, LEVEL,\n  CAMPAIGN_ID, CAMPAIGN_NAME, ADSET_ID, ADSET_NAME, AD_ID, AD_NAME,\n  IMPRESSIONS, CLICKS, SPEND, LEADS, PURCHASES, RAW_JSON\n)\nVALUES (\n  s.PULLED_AT, s.DATE_START, s.DATE_STOP, s.AD_ACCOUNT_ID, s.CURRENCY, s.LEVEL,\n  s.CAMPAIGN_ID, s.CAMPAIGN_NAME, s.ADSET_ID, s.ADSET_NAME, s.AD_ID, s.AD_NAME,\n  s.IMPRESSIONS, s.CLICKS, s.SPEND, s.LEADS, s.PURCHASES, s.RAW_JSON\n);\n"
       },
       "type": "n8n-nodes-base.snowflake",
       "typeVersion": 1,
