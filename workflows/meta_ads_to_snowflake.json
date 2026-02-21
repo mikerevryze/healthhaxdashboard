@@ -1,0 +1,380 @@
+{
+  "name": "CL_HealthHax_Meta_Ads_Daily",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-256, -96],
+      "id": "m1a00000-0000-4000-8000-000000000001",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m1a00000-0001-4000-8000-000000000001",
+              "name": "ad_account_id",
+              "value": "YOUR_AD_ACCOUNT_ID",
+              "type": "string"
+            },
+            {
+              "id": "m1a00000-0001-4000-8000-000000000002",
+              "name": "access_token",
+              "value": "YOUR_META_ACCESS_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "m1a00000-0001-4000-8000-000000000003",
+              "name": "days_back",
+              "value": 30,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-96, -96],
+      "id": "m1a00000-0002-4000-8000-000000000001",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build date range: from (days_back ago) to yesterday\nconst daysBack = $input.first().json.days_back || 30;\nconst now = new Date();\n\nconst since = new Date(now);\nsince.setDate(since.getDate() - daysBack);\n\nconst until = new Date(now);\nuntil.setDate(until.getDate() - 1);\n\nconst fmt = (d) => d.toISOString().slice(0, 10);\n\nreturn [{\n  json: {\n    ad_account_id: $input.first().json.ad_account_id,\n    access_token: $input.first().json.access_token,\n    since: fmt(since),\n    until: fmt(until)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [64, -96],
+      "id": "m1a00000-0003-4000-8000-000000000001",
+      "name": "Build Date Range"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/act_{{ $json.ad_account_id }}/insights",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            },
+            {
+              "name": "fields",
+              "value": "campaign_id,campaign_name,spend,impressions,clicks,actions"
+            },
+            {
+              "name": "level",
+              "value": "campaign"
+            },
+            {
+              "name": "time_increment",
+              "value": "1"
+            },
+            {
+              "name": "time_range",
+              "value": "={{ JSON.stringify({ since: $json.since, until: $json.until }) }}"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [224, -96],
+      "id": "m1a00000-0004-4000-8000-000000000001",
+      "name": "Fetch Meta Insights",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "m1a00000-0005-4000-8000-000000000001",
+              "leftValue": "={{ ($json.data || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [384, -96],
+      "id": "m1a00000-0006-4000-8000-000000000001",
+      "name": "Has Data?"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [544, -96],
+      "id": "m1a00000-0007-4000-8000-000000000001",
+      "name": "Split Out Rows"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform Meta Insights rows into Snowflake-friendly format.\n// Extract 'lead' count from the actions array.\nconst config = $('Config').first().json;\n\nreturn items.map(item => {\n  const row = item.json;\n\n  // actions is an array like [{action_type:'lead', value:'3'}, ...]\n  const actions = row.actions || [];\n  const leadAction = actions.find(a =>\n    a.action_type === 'lead' ||\n    a.action_type === 'onsite_conversion.lead_grouped' ||\n    a.action_type === 'offsite_conversion.fb_pixel_lead'\n  );\n  const leads = leadAction ? Number(leadAction.value) : 0;\n\n  return {\n    json: {\n      date_key: row.date_start,\n      ad_account_id: config.ad_account_id,\n      campaign_id: row.campaign_id || 'unknown',\n      campaign_name: (row.campaign_name || 'Unknown').replace(/'/g, \"''\"),\n      spend: Number(row.spend) || 0,\n      impressions: Number(row.impressions) || 0,\n      clicks: Number(row.clicks) || 0,\n      leads: leads,\n      raw: JSON.stringify(row).replace(/'/g, \"''\"),\n      pulled_at_ts: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [704, -96],
+      "id": "m1a00000-0008-4000-8000-000000000001",
+      "name": "Transform for Snowflake"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "MERGE INTO REVRYZE.RAW.META_ADS_DAILY t\nUSING (\n  SELECT\n    TO_DATE('{{$json.date_key}}') AS DATE_KEY,\n    '{{$json.ad_account_id}}' AS AD_ACCOUNT_ID,\n    '{{$json.campaign_id}}' AS CAMPAIGN_ID,\n    '{{$json.campaign_name}}' AS CAMPAIGN_NAME,\n    TRY_TO_NUMBER('{{$json.spend}}', 18, 2) AS SPEND,\n    TRY_TO_NUMBER('{{$json.impressions}}', 18, 0) AS IMPRESSIONS,\n    TRY_TO_NUMBER('{{$json.clicks}}', 18, 0) AS CLICKS,\n    TRY_TO_NUMBER('{{$json.leads}}', 18, 0) AS LEADS,\n    TRY_PARSE_JSON('{{$json.raw}}') AS RAW,\n    TRY_TO_TIMESTAMP_NTZ('{{$json.pulled_at_ts}}') AS PULLED_AT_TS\n) s\n\nON t.DATE_KEY = s.DATE_KEY\n  AND t.AD_ACCOUNT_ID = s.AD_ACCOUNT_ID\n  AND t.CAMPAIGN_ID = s.CAMPAIGN_ID\n\nWHEN MATCHED THEN UPDATE SET\n  CAMPAIGN_NAME = s.CAMPAIGN_NAME,\n  SPEND = s.SPEND,\n  IMPRESSIONS = s.IMPRESSIONS,\n  CLICKS = s.CLICKS,\n  LEADS = s.LEADS,\n  RAW = s.RAW,\n  PULLED_AT_TS = s.PULLED_AT_TS\n\nWHEN NOT MATCHED THEN INSERT (\n  DATE_KEY, AD_ACCOUNT_ID, CAMPAIGN_ID, CAMPAIGN_NAME,\n  SPEND, IMPRESSIONS, CLICKS, LEADS,\n  RAW, PULLED_AT_TS\n)\nVALUES (\n  s.DATE_KEY, s.AD_ACCOUNT_ID, s.CAMPAIGN_ID, s.CAMPAIGN_NAME,\n  s.SPEND, s.IMPRESSIONS, s.CLICKS, s.LEADS,\n  s.RAW, s.PULLED_AT_TS\n);\n"
+      },
+      "type": "n8n-nodes-base.snowflake",
+      "typeVersion": 1,
+      "position": [864, -96],
+      "id": "m1a00000-0009-4000-8000-000000000001",
+      "name": "Snowflake",
+      "credentials": {
+        "snowflake": {
+          "id": "lSGl0Euzea9Zvmt7",
+          "name": "Snowflake account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if there's a next page of results (Meta paginates at 500+)\nconst response = $('Fetch Meta Insights').first().json;\nconst nextUrl = response?.paging?.next;\n\nif (nextUrl) {\n  return [{ json: { next_url: nextUrl } }];\n}\n\n// No more pages — stop\nreturn [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1024, -96],
+      "id": "m1a00000-0010-4000-8000-000000000001",
+      "name": "Check Next Page"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "m1a00000-0011-4000-8000-000000000001",
+              "leftValue": "={{ ($json.next_url || '').length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1184, -96],
+      "id": "m1a00000-0012-4000-8000-000000000001",
+      "name": "More Pages?"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.next_url }}",
+        "sendHeaders": false,
+        "sendQuery": false,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1344, -96],
+      "id": "m1a00000-0013-4000-8000-000000000001",
+      "name": "Fetch Next Page",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "errorType": "=errorMessage",
+        "errorMessage": "={{ \"No data returned from Meta Ads API\" }}"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [544, 64],
+      "id": "m1a00000-0014-4000-8000-000000000001",
+      "name": "No Data"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Build Date Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Date Range": {
+      "main": [
+        [
+          {
+            "node": "Fetch Meta Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Meta Insights": {
+      "main": [
+        [
+          {
+            "node": "Has Data?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Data?": {
+      "main": [
+        [
+          {
+            "node": "Split Out Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Rows": {
+      "main": [
+        [
+          {
+            "node": "Transform for Snowflake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform for Snowflake": {
+      "main": [
+        [
+          {
+            "node": "Snowflake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Snowflake": {
+      "main": [
+        [
+          {
+            "node": "Check Next Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Next Page": {
+      "main": [
+        [
+          {
+            "node": "More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More Pages?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Fetch Next Page": {
+      "main": [
+        [
+          {
+            "node": "Has Data?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "m1a00000-0000-4000-8000-000000000099",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0dd792e002b291da0dbecf5d75bc1f54e16c0266d8f8277263d78abbb783f658"
+  },
+  "id": "metaAdsWorkflow001",
+  "tags": []
+}
