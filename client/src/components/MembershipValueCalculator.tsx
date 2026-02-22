@@ -2,10 +2,16 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Calculator, Clock, DollarSign, TrendingDown, CalendarDays } from "lucide-react";
+import {
+  Calculator,
+  DollarSign,
+  Users,
+  Clock,
+  TrendingUp,
+} from "lucide-react";
 
 interface MembershipValueCalculatorProps {
-  membershipsSold: number;
+  membersAdded: number;
 }
 
 function formatCurrency(value: number): string {
@@ -17,17 +23,19 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function MembershipValueCalculator({ membershipsSold }: MembershipValueCalculatorProps) {
-  const [monthlyPrice, setMonthlyPrice] = useState("");
+export function MembershipValueCalculator({
+  membersAdded,
+}: MembershipValueCalculatorProps) {
+  const [valueInput, setValueInput] = useState("");
   const [attritionInput, setAttritionInput] = useState("");
   const [lifetimeInput, setLifetimeInput] = useState("");
   const [useLifetime, setUseLifetime] = useState(false);
 
-  const price = parseFloat(monthlyPrice) || 0;
+  const memberValue = parseFloat(valueInput) || 0;
   const attritionPct = parseFloat(attritionInput) || 0;
   const lifetimeDirect = parseFloat(lifetimeInput) || 0;
 
-  // Calculate average lifetime in months
+  // Lifetime in months: from attrition (1 / rate) or entered directly
   let lifetimeMonths = 0;
   if (useLifetime) {
     lifetimeMonths = lifetimeDirect;
@@ -35,35 +43,49 @@ export function MembershipValueCalculator({ membershipsSold }: MembershipValueCa
     lifetimeMonths = 1 / (attritionPct / 100);
   }
 
-  const ltvPerMember = price * lifetimeMonths;
-  const monthlyRevenue = price * membershipsSold;
-  const totalLifetimeValue = ltvPerMember * membershipsSold;
+  const ltvPerMember = memberValue * lifetimeMonths;
+  const totalProjectedValue = ltvPerMember * membersAdded;
 
-  const hasInput = price > 0 && lifetimeMonths > 0;
+  const hasProjection = memberValue > 0 && lifetimeMonths > 0;
 
   return (
     <Card className="relative border-[#10E29C]/30 bg-card p-6">
+      {/* Header */}
       <div className="mb-1 flex items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#10E29C]/10">
           <Calculator className="h-5 w-5 text-[#10E29C]" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Membership Value Calculator</h2>
+          <h2 className="text-lg font-bold text-foreground">
+            Membership Value Calculator
+          </h2>
           <p className="text-xs text-muted-foreground">
-            Calculate member value based on attrition &amp; memberships sold
+            Total members added &times; value &times; lifetime
           </p>
         </div>
       </div>
 
-      {membershipsSold > 0 && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Memberships sold: <span className="font-semibold text-[#10E29C]">{membershipsSold.toLocaleString()}</span>
+      {/* Actual: members added from pipeline */}
+      <div className="mt-4 rounded-md border border-[#10E29C]/20 bg-[#10E29C]/5 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-[#10E29C]" />
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Members Added
+          </span>
+          <span className="ml-auto rounded bg-[#10E29C]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#10E29C]">
+            Actual
+          </span>
+        </div>
+        <p className="mt-1 text-2xl font-bold text-foreground">
+          {membersAdded.toLocaleString()}
         </p>
-      )}
+      </div>
 
-      {/* Toggle */}
+      {/* Lifetime toggle */}
       <div className="mt-5 flex items-center gap-3">
-        <span className={`text-xs font-medium uppercase tracking-wider ${!useLifetime ? "text-[#10E29C]" : "text-muted-foreground"}`}>
+        <span
+          className={`text-xs font-medium uppercase tracking-wider ${!useLifetime ? "text-[#10E29C]" : "text-muted-foreground"}`}
+        >
           Monthly Attrition %
         </span>
         <Switch
@@ -71,32 +93,36 @@ export function MembershipValueCalculator({ membershipsSold }: MembershipValueCa
           onCheckedChange={setUseLifetime}
           className="data-[state=checked]:bg-[#10E29C]"
         />
-        <span className={`text-xs font-medium uppercase tracking-wider ${useLifetime ? "text-[#10E29C]" : "text-muted-foreground"}`}>
-          Lifetime (Months)
+        <span
+          className={`text-xs font-medium uppercase tracking-wider ${useLifetime ? "text-[#10E29C]" : "text-muted-foreground"}`}
+        >
+          Avg Lifetime (Months)
         </span>
       </div>
 
-      {/* Inputs */}
+      {/* Inputs row */}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Membership value */}
         <div>
           <label
-            htmlFor="monthly-price-input"
+            htmlFor="member-value-input"
             className="mb-2 block text-xs font-medium uppercase tracking-wider text-muted-foreground"
           >
-            Monthly Membership Price ($)
+            Membership Value ($/mo)
           </label>
           <Input
-            id="monthly-price-input"
+            id="member-value-input"
             type="number"
             min="0"
             step="1"
             placeholder="e.g. 149"
-            value={monthlyPrice}
-            onChange={(e) => setMonthlyPrice(e.target.value)}
+            value={valueInput}
+            onChange={(e) => setValueInput(e.target.value)}
             className="border-[#10E29C]/20 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-[#10E29C]/40"
           />
         </div>
 
+        {/* Attrition OR Lifetime */}
         {useLifetime ? (
           <div>
             <label
@@ -139,63 +165,84 @@ export function MembershipValueCalculator({ membershipsSold }: MembershipValueCa
         )}
       </div>
 
-      {/* Derived lifetime display when using attrition */}
+      {/* Derived lifetime when using attrition */}
       {!useLifetime && attritionPct > 0 && attritionPct < 100 && (
         <p className="mt-3 text-xs text-muted-foreground">
-          Avg member lifetime: <span className="font-semibold text-[#10E29C]">{lifetimeMonths.toFixed(1)} months</span>
+          = avg member lifetime:{" "}
+          <span className="font-semibold text-[#10E29C]">
+            {lifetimeMonths.toFixed(1)} months
+          </span>
         </p>
       )}
 
-      {/* Results */}
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-md border border-border bg-background p-4">
+      {/* Projected results */}
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-4">
           <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-[#10E29C]" />
+            <Clock className="h-4 w-4 text-amber-500" />
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Avg Lifetime
             </span>
+            <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">
+              Projected
+            </span>
           </div>
           <p className="mt-2 text-2xl font-bold text-foreground">
-            {hasInput ? `${lifetimeMonths.toFixed(1)} mo` : "--"}
+            {hasProjection ? `${lifetimeMonths.toFixed(1)} mo` : "--"}
           </p>
         </div>
 
-        <div className="rounded-md border border-border bg-background p-4">
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-4">
           <div className="flex items-center gap-2">
-            <TrendingDown className="h-4 w-4 text-[#10E29C]" />
+            <DollarSign className="h-4 w-4 text-amber-500" />
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               LTV / Member
             </span>
-          </div>
-          <p className="mt-2 text-2xl font-bold text-foreground">
-            {hasInput ? formatCurrency(ltvPerMember) : "--"}
-          </p>
-        </div>
-
-        <div className="rounded-md border border-border bg-background p-4">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-[#10E29C]" />
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Monthly Revenue
+            <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">
+              Projected
             </span>
           </div>
           <p className="mt-2 text-2xl font-bold text-foreground">
-            {hasInput ? formatCurrency(monthlyRevenue) : "--"}
+            {hasProjection ? formatCurrency(ltvPerMember) : "--"}
           </p>
         </div>
 
-        <div className="rounded-md border border-border bg-background p-4">
+        <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-4">
           <div className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-[#10E29C]" />
+            <TrendingUp className="h-4 w-4 text-amber-500" />
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Total Lifetime Value
+              Total Projected Value
+            </span>
+            <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-500">
+              Projected
             </span>
           </div>
           <p className="mt-2 text-2xl font-bold text-foreground">
-            {hasInput ? formatCurrency(totalLifetimeValue) : "--"}
+            {hasProjection ? formatCurrency(totalProjectedValue) : "--"}
           </p>
         </div>
       </div>
+
+      {/* Summary sentence */}
+      {hasProjection && membersAdded > 0 && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground">
+            {membersAdded.toLocaleString()}
+          </span>{" "}
+          members &times;{" "}
+          <span className="font-semibold text-foreground">
+            {formatCurrency(memberValue)}/mo
+          </span>{" "}
+          &times;{" "}
+          <span className="font-semibold text-foreground">
+            {lifetimeMonths.toFixed(1)} mo
+          </span>{" "}
+          ={" "}
+          <span className="font-bold text-[#10E29C]">
+            {formatCurrency(totalProjectedValue)}
+          </span>
+        </p>
+      )}
     </Card>
   );
 }

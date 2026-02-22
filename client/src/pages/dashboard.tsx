@@ -236,9 +236,9 @@ export default function Dashboard() {
         ) : null}
       </div>
 
-      {/* Membership Value Calculator */}
+      {/* Membership Value Calculator — inline, always visible */}
       <div className="mt-8">
-        <MembershipValueCalculator membershipsSold={metrics.closed_won} />
+        <MembershipValueCalculator membersAdded={metrics.closed_won} />
       </div>
 
       {/* Goal Calculator */}
