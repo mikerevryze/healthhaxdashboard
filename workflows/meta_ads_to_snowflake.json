@@ -86,33 +86,22 @@
     },
     {
       "parameters": {
-        "fieldToSplitOut": "data",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
-      "position": [660, 0],
-      "id": "6495db94-da4b-4d2c-b5d5-af83ab738a48",
-      "name": "Split Out"
-    },
-    {
-      "parameters": {
-        "jsCode": "const r = $json;\nconst pulledAt = new Date().toISOString();\n\nfunction getAction(actions, type) {\n  const a = (actions || []).find(x => x.action_type === type);\n  return a ? Number(a.value) : 0;\n}\n\nreturn {\n  pulled_at: pulledAt,\n  date_start: r.date_start,\n  date_stop: r.date_stop,\n  ad_account_id: r.account_id,\n  currency: r.account_currency,\n  level: 'ad',\n\n  campaign_id: r.campaign_id,\n  campaign_name: (r.campaign_name || 'Unknown').replace(/'/g, \"''\"),\n  adset_id: r.adset_id,\n  adset_name: (r.adset_name || 'Unknown').replace(/'/g, \"''\"),\n  ad_id: r.ad_id,\n  ad_name: (r.ad_name || 'Unknown').replace(/'/g, \"''\"),\n\n  impressions: Number(r.impressions || 0),\n  clicks: Number(r.clicks || 0),\n  spend: Number(r.spend || 0),\n\n  leads:\n    getAction(r.actions, 'lead') +\n    getAction(r.actions, 'onsite_conversion.lead_grouped') +\n    getAction(r.actions, 'offsite_conversion.fb_pixel_lead'),\n\n  purchases: 0,\n  raw_json: JSON.stringify(r).replace(/'/g, \"''\")\n};\n"
+        "jsCode": "// Build a single batch MERGE SQL from ALL rows in the API response\n// This ensures all data is inserted in ONE Snowflake call\nconst response = $input.first().json;\nconst rows = response.data || [];\nconst pulledAt = new Date().toISOString();\n\nfunction getAction(actions, type) {\n  const a = (actions || []).find(x => x.action_type === type);\n  return a ? Number(a.value) : 0;\n}\n\nfunction esc(s) {\n  return String(s || '').replace(/'/g, \"''\");\n}\n\nconst selects = rows.map(r => {\n  const leads =\n    getAction(r.actions, 'lead') +\n    getAction(r.actions, 'onsite_conversion.lead_grouped') +\n    getAction(r.actions, 'offsite_conversion.fb_pixel_lead');\n\n  return `SELECT\n    TRY_TO_TIMESTAMP_NTZ('${pulledAt}') AS PULLED_AT,\n    TO_DATE('${r.date_start}') AS DATE_START,\n    TO_DATE('${r.date_stop}') AS DATE_STOP,\n    '${esc(r.account_id)}' AS AD_ACCOUNT_ID,\n    '${esc(r.account_currency)}' AS CURRENCY,\n    'ad' AS LEVEL,\n    '${esc(r.campaign_id)}' AS CAMPAIGN_ID,\n    '${esc(r.campaign_name)}' AS CAMPAIGN_NAME,\n    '${esc(r.adset_id)}' AS ADSET_ID,\n    '${esc(r.adset_name)}' AS ADSET_NAME,\n    '${esc(r.ad_id)}' AS AD_ID,\n    '${esc(r.ad_name)}' AS AD_NAME,\n    ${Number(r.impressions || 0)} AS IMPRESSIONS,\n    ${Number(r.clicks || 0)} AS CLICKS,\n    ${Number(r.spend || 0)} AS SPEND,\n    ${leads} AS LEADS,\n    0 AS PURCHASES`;\n}).join('\\n  UNION ALL\\n');\n\nconst sql = `MERGE INTO REVRYZE.RAW.META_ADS_DAILY t\nUSING (\n  ${selects}\n) s\nON  t.DATE_START     = s.DATE_START\nAND t.AD_ACCOUNT_ID  = s.AD_ACCOUNT_ID\nAND t.AD_ID          = s.AD_ID\n\nWHEN MATCHED THEN UPDATE SET\n  PULLED_AT     = s.PULLED_AT,\n  DATE_STOP     = s.DATE_STOP,\n  CURRENCY      = s.CURRENCY,\n  LEVEL         = s.LEVEL,\n  CAMPAIGN_ID   = s.CAMPAIGN_ID,\n  CAMPAIGN_NAME = s.CAMPAIGN_NAME,\n  ADSET_ID      = s.ADSET_ID,\n  ADSET_NAME    = s.ADSET_NAME,\n  AD_NAME       = s.AD_NAME,\n  IMPRESSIONS   = s.IMPRESSIONS,\n  CLICKS        = s.CLICKS,\n  SPEND         = s.SPEND,\n  LEADS         = s.LEADS,\n  PURCHASES     = s.PURCHASES\n\nWHEN NOT MATCHED THEN INSERT (\n  PULLED_AT, DATE_START, DATE_STOP, AD_ACCOUNT_ID, CURRENCY, LEVEL,\n  CAMPAIGN_ID, CAMPAIGN_NAME, ADSET_ID, ADSET_NAME, AD_ID, AD_NAME,\n  IMPRESSIONS, CLICKS, SPEND, LEADS, PURCHASES\n)\nVALUES (\n  s.PULLED_AT, s.DATE_START, s.DATE_STOP, s.AD_ACCOUNT_ID, s.CURRENCY, s.LEVEL,\n  s.CAMPAIGN_ID, s.CAMPAIGN_NAME, s.ADSET_ID, s.ADSET_NAME, s.AD_ID, s.AD_NAME,\n  s.IMPRESSIONS, s.CLICKS, s.SPEND, s.LEADS, s.PURCHASES\n);`;\n\n// Also pass along paging info for pagination\nconst nextUrl = response?.paging?.next || '';\n\nreturn [{ json: { sql, row_count: rows.length, next_url: nextUrl } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 0],
+      "position": [660, 0],
       "id": "89335886-a185-44c1-b6cd-b61e056cf8de",
-      "name": "Transform for Snowflake"
+      "name": "Build Batch SQL"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "MERGE INTO REVRYZE.RAW.META_ADS_DAILY t\nUSING (\n  SELECT\n    TRY_TO_TIMESTAMP_NTZ('{{$json.pulled_at}}')   AS PULLED_AT,\n    TO_DATE('{{$json.date_start}}')                AS DATE_START,\n    TO_DATE('{{$json.date_stop}}')                 AS DATE_STOP,\n    '{{$json.ad_account_id}}'                      AS AD_ACCOUNT_ID,\n    '{{$json.currency}}'                           AS CURRENCY,\n    '{{$json.level}}'                              AS LEVEL,\n    '{{$json.campaign_id}}'                        AS CAMPAIGN_ID,\n    '{{$json.campaign_name}}'                      AS CAMPAIGN_NAME,\n    '{{$json.adset_id}}'                           AS ADSET_ID,\n    '{{$json.adset_name}}'                         AS ADSET_NAME,\n    '{{$json.ad_id}}'                              AS AD_ID,\n    '{{$json.ad_name}}'                            AS AD_NAME,\n    TRY_TO_NUMBER('{{$json.impressions}}', 18, 0)  AS IMPRESSIONS,\n    TRY_TO_NUMBER('{{$json.clicks}}', 18, 0)       AS CLICKS,\n    TRY_TO_NUMBER('{{$json.spend}}', 18, 2)        AS SPEND,\n    TRY_TO_NUMBER('{{$json.leads}}', 18, 0)        AS LEADS,\n    TRY_TO_NUMBER('{{$json.purchases}}', 18, 0)    AS PURCHASES,\n    TRY_PARSE_JSON('{{$json.raw_json}}')           AS RAW_JSON\n) s\nON  t.DATE_START     = s.DATE_START\nAND t.AD_ACCOUNT_ID  = s.AD_ACCOUNT_ID\nAND t.AD_ID          = s.AD_ID\n\nWHEN MATCHED THEN UPDATE SET\n  PULLED_AT     = s.PULLED_AT,\n  DATE_STOP     = s.DATE_STOP,\n  CURRENCY      = s.CURRENCY,\n  LEVEL         = s.LEVEL,\n  CAMPAIGN_ID   = s.CAMPAIGN_ID,\n  CAMPAIGN_NAME = s.CAMPAIGN_NAME,\n  ADSET_ID      = s.ADSET_ID,\n  ADSET_NAME    = s.ADSET_NAME,\n  AD_NAME       = s.AD_NAME,\n  IMPRESSIONS   = s.IMPRESSIONS,\n  CLICKS        = s.CLICKS,\n  SPEND         = s.SPEND,\n  LEADS         = s.LEADS,\n  PURCHASES     = s.PURCHASES,\n  RAW_JSON      = s.RAW_JSON\n\nWHEN NOT MATCHED THEN INSERT (\n  PULLED_AT, DATE_START, DATE_STOP, AD_ACCOUNT_ID, CURRENCY, LEVEL,\n  CAMPAIGN_ID, CAMPAIGN_NAME, ADSET_ID, ADSET_NAME, AD_ID, AD_NAME,\n  IMPRESSIONS, CLICKS, SPEND, LEADS, PURCHASES, RAW_JSON\n)\nVALUES (\n  s.PULLED_AT, s.DATE_START, s.DATE_STOP, s.AD_ACCOUNT_ID, s.CURRENCY, s.LEVEL,\n  s.CAMPAIGN_ID, s.CAMPAIGN_NAME, s.ADSET_ID, s.ADSET_NAME, s.AD_ID, s.AD_NAME,\n  s.IMPRESSIONS, s.CLICKS, s.SPEND, s.LEADS, s.PURCHASES, s.RAW_JSON\n);\n"
+        "query": "={{$json.sql}}"
       },
       "type": "n8n-nodes-base.snowflake",
       "typeVersion": 1,
-      "position": [1100, 0],
+      "position": [880, 0],
       "id": "c5be524d-0c06-49af-a3ac-d89073083a0d",
       "name": "Snowflake",
       "credentials": {
@@ -121,16 +110,6 @@
           "name": "Snowflake account"
         }
       }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Check if there's a next page of results (Meta paginates at 500+)\n// Try the most recent page first (Fetch Next Page), fall back to the initial fetch\nlet response;\ntry {\n  response = $('Fetch Next Page').first().json;\n} catch (e) {\n  response = $('Fetch Meta Insights').first().json;\n}\nconst nextUrl = response?.paging?.next;\n\nif (nextUrl) {\n  return [{ json: { next_url: nextUrl } }];\n}\n\n// No more pages\nreturn [];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1320, 0],
-      "id": "check-next-page-node",
-      "name": "Check Next Page"
     },
     {
       "parameters": {
@@ -144,7 +123,7 @@
           "conditions": [
             {
               "id": "cond-more-pages-001",
-              "leftValue": "={{ ($json.next_url || '').length }}",
+              "leftValue": "={{ ($('Build Batch SQL').first().json.next_url || '').length }}",
               "rightValue": 0,
               "operator": {
                 "type": "number",
@@ -158,21 +137,21 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
-      "position": [1540, 0],
+      "position": [1100, 0],
       "id": "more-pages-node",
       "name": "More Pages?"
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $json.next_url }}",
+        "url": "={{ $('Build Batch SQL').first().json.next_url }}",
         "sendHeaders": false,
         "sendQuery": false,
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [1760, 0],
+      "position": [1320, 0],
       "id": "fetch-next-page-node",
       "name": "Fetch Next Page",
       "alwaysOutputData": true
@@ -217,7 +196,7 @@
       "main": [
         [
           {
-            "node": "Split Out",
+            "node": "Build Batch SQL",
             "type": "main",
             "index": 0
           }
@@ -231,18 +210,7 @@
         ]
       ]
     },
-    "Split Out": {
-      "main": [
-        [
-          {
-            "node": "Transform for Snowflake",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transform for Snowflake": {
+    "Build Batch SQL": {
       "main": [
         [
           {
@@ -254,17 +222,6 @@
       ]
     },
     "Snowflake": {
-      "main": [
-        [
-          {
-            "node": "Check Next Page",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Next Page": {
       "main": [
         [
           {
