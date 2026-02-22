@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
   Trophy,
   DollarSign,
@@ -6,13 +9,16 @@ import {
   XCircle,
   TrendingUp,
   Megaphone,
+  Leaf,
+  MousePointerClick,
 } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { FunnelChart } from "@/components/FunnelChart";
 import { GoalCalculator } from "@/components/GoalCalculator";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
-import type { Metrics, MetaMetrics, FunnelStage } from "@shared/schema";
+import type { Metrics, MetaMetrics, FunnelStage, LeadsBreakdown } from "@shared/schema";
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -66,18 +72,49 @@ function ErrorState({ message }: { message: string }) {
 }
 
 export default function Dashboard() {
+  // null = custom date range active, number = preset days
+  const [activeDays, setActiveDays] = useState<number | null>(30);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
+  // Build query string based on active selection
+  let querySuffix = "";
+  if (activeDays !== null) {
+    querySuffix = activeDays > 0 ? `?days=${activeDays}` : "";
+  } else if (dateRange?.from && dateRange?.to) {
+    const start = format(dateRange.from, "yyyy-MM-dd");
+    const end = format(dateRange.to, "yyyy-MM-dd");
+    querySuffix = `?start_date=${start}&end_date=${end}`;
+  }
+
+  const handlePresetChange = (days: number) => {
+    setActiveDays(days);
+    setDateRange(undefined);
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRange(range);
+    if (range?.from) {
+      setActiveDays(null);
+    }
+  };
+
   const { data: metrics, isLoading: metricsLoading, error: metricsError } = useQuery<Metrics>({
-    queryKey: ["/api/metrics"],
+    queryKey: [`/api/metrics${querySuffix}`],
     refetchInterval: 60000,
   });
 
   const { data: meta } = useQuery<MetaMetrics>({
-    queryKey: ["/api/meta"],
+    queryKey: [`/api/meta${querySuffix}`],
+    refetchInterval: 60000,
+  });
+
+  const { data: leadsBreakdown } = useQuery<LeadsBreakdown>({
+    queryKey: [`/api/leads-breakdown${querySuffix}`],
     refetchInterval: 60000,
   });
 
   const { data: funnel, isLoading: funnelLoading } = useQuery<FunnelStage[]>({
-    queryKey: ["/api/funnel"],
+    queryKey: [`/api/funnel${querySuffix}`],
     refetchInterval: 60000,
   });
 
@@ -92,15 +129,24 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Performance Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
-        </p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            Performance Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            GHL Pipeline &amp; Meta Ads &middot; Live from Snowflake
+          </p>
+        </div>
+        <DateRangePicker
+          dateRange={dateRange}
+          onDateRangeChange={handleDateRangeChange}
+          activeDays={activeDays}
+          onPresetChange={handlePresetChange}
+        />
       </div>
 
+      {/* GHL Pipeline Metrics */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <MetricCard
           title="Total Leads"
@@ -139,6 +185,39 @@ export default function Dashboard() {
           subtitle="Cost per lead from Meta"
         />
       </div>
+
+      {/* Lead Source Breakdown */}
+      {leadsBreakdown && (
+        <div className="mt-6">
+          <h2 className="mb-3 text-lg font-semibold text-foreground">
+            Lead Sources
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <MetricCard
+              title="Meta (Paid) Leads"
+              value={leadsBreakdown.meta_leads.toLocaleString()}
+              icon={MousePointerClick}
+              subtitle="Leads from Meta ads"
+            />
+            <MetricCard
+              title="Organic / Other Leads"
+              value={leadsBreakdown.organic_leads.toLocaleString()}
+              icon={Leaf}
+              subtitle="Non-paid lead sources"
+            />
+            <MetricCard
+              title="Paid Lead %"
+              value={
+                leadsBreakdown.total_leads > 0
+                  ? `${((leadsBreakdown.meta_leads / leadsBreakdown.total_leads) * 100).toFixed(1)}%`
+                  : "0.0%"
+              }
+              icon={TrendingUp}
+              subtitle="Meta leads / Total leads"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Pipeline Funnel */}
       <div className="mt-8">

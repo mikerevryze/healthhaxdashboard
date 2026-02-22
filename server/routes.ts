@@ -3,14 +3,41 @@ import { type Server } from "http";
 import { executeQuery } from "./snowflake";
 import { log } from "./logger";
 
+/** Build a SQL WHERE/AND clause from query params.
+ *  Supports either `days` (rolling window) or `start_date` + `end_date` (custom range).
+ *  `dateColumn` is the Snowflake column to filter on.
+ *  `prefix` is "WHERE" or "AND" depending on context.
+ */
+function buildDateFilter(
+  query: Record<string, any>,
+  dateColumn: string,
+  prefix: "WHERE" | "AND"
+): string {
+  const startDate = query.start_date as string | undefined;
+  const endDate = query.end_date as string | undefined;
+
+  if (startDate && endDate) {
+    return `${prefix} ${dateColumn} >= '${startDate}'::DATE AND ${dateColumn} <= '${endDate}'::DATE`;
+  }
+
+  const days = parseInt(query.days as string) || 0;
+  if (days > 0) {
+    return `${prefix} ${dateColumn} >= DATEADD('day', -${days}, CURRENT_DATE())`;
+  }
+
+  return "";
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   // KPI metrics from GHL opportunities
   // Uses PIPELINE_STAGE_NAME to detect won/lost since STATUS may not reflect stage
-  app.get("/api/metrics", async (_req, res) => {
+  app.get("/api/metrics", async (req, res) => {
     try {
+      const dateFilter = buildDateFilter(req.query, "CREATED_AT_TS", "WHERE");
+
       const rows = await executeQuery<{
         TOTAL_LEADS: number;
         CLOSED_WON: number;
@@ -39,6 +66,7 @@ export async function registerRoutes(
           END) AS OPEN_DEALS,
           COALESCE(SUM(MONETARY_VALUE), 0) AS TOTAL_VALUE
         FROM GHL_OPPORTUNITIES
+        ${dateFilter}
       `);
 
       const row = rows[0];
@@ -56,8 +84,11 @@ export async function registerRoutes(
   });
 
   // Meta ads aggregate metrics from META_ADS_DAILY
-  app.get("/api/meta", async (_req, res) => {
+  // Uses DATE_START column (18-column ad-level schema)
+  app.get("/api/meta", async (req, res) => {
     try {
+      const dateFilter = buildDateFilter(req.query, "DATE_START", "WHERE");
+
       const rows = await executeQuery<{
         TOTAL_SPEND: number;
         TOTAL_LEADS: number;
@@ -66,6 +97,7 @@ export async function registerRoutes(
           COALESCE(SUM(SPEND), 0)  AS TOTAL_SPEND,
           COALESCE(SUM(LEADS), 0)  AS TOTAL_LEADS
         FROM META_ADS_DAILY
+        ${dateFilter}
       `);
 
       const row = rows[0];
@@ -85,8 +117,10 @@ export async function registerRoutes(
   });
 
   // Pipeline funnel - deals by stage (excludes lost)
-  app.get("/api/funnel", async (_req, res) => {
+  app.get("/api/funnel", async (req, res) => {
     try {
+      const dateFilter = buildDateFilter(req.query, "CREATED_AT_TS", "AND");
+
       const rows = await executeQuery<{
         PIPELINE_NAME: string;
         PIPELINE_STAGE_NAME: string;
@@ -102,6 +136,7 @@ export async function registerRoutes(
         WHERE STATUS != 'lost'
           AND PIPELINE_STAGE_NAME NOT ILIKE '%Closed-Lost%'
           AND PIPELINE_STAGE_NAME NOT ILIKE '%Closed Lost%'
+          ${dateFilter}
         GROUP BY PIPELINE_NAME, PIPELINE_STAGE_NAME
         ORDER BY PIPELINE_NAME, OPP_COUNT DESC
       `);
@@ -117,6 +152,41 @@ export async function registerRoutes(
     } catch (err: any) {
       log(`Funnel endpoint error: ${err.message}`, "api");
       res.status(500).json({ message: "Failed to fetch funnel data" });
+    }
+  });
+
+  // Leads breakdown: GHL total leads vs Meta paid leads
+  // Helps distinguish paid (Meta) leads from organic/other sources
+  app.get("/api/leads-breakdown", async (req, res) => {
+    try {
+      const ghlDateFilter = buildDateFilter(req.query, "CREATED_AT_TS", "WHERE");
+      const metaDateFilter = buildDateFilter(req.query, "DATE_START", "WHERE");
+
+      const [ghlRows, metaRows] = await Promise.all([
+        executeQuery<{ TOTAL_LEADS: number }>(`
+          SELECT COUNT(*) AS TOTAL_LEADS
+          FROM GHL_OPPORTUNITIES
+          ${ghlDateFilter}
+        `),
+        executeQuery<{ META_LEADS: number }>(`
+          SELECT COALESCE(SUM(LEADS), 0) AS META_LEADS
+          FROM META_ADS_DAILY
+          ${metaDateFilter}
+        `),
+      ]);
+
+      const totalLeads = Number(ghlRows[0]?.TOTAL_LEADS) || 0;
+      const metaLeads = Number(metaRows[0]?.META_LEADS) || 0;
+      const organicLeads = Math.max(0, totalLeads - metaLeads);
+
+      res.json({
+        total_leads: totalLeads,
+        meta_leads: metaLeads,
+        organic_leads: organicLeads,
+      });
+    } catch (err: any) {
+      log(`Leads breakdown error: ${err.message}`, "api");
+      res.status(500).json({ message: "Failed to fetch leads breakdown" });
     }
   });
 

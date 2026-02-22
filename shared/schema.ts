@@ -26,3 +26,32 @@ export const funnelStageSchema = z.object({
 });
 
 export type FunnelStage = z.infer<typeof funnelStageSchema>;
+
+export const leadsBreakdownSchema = z.object({
+  total_leads: z.number(),
+  meta_leads: z.number(),
+  organic_leads: z.number(),
+});
+
+export type LeadsBreakdown = z.infer<typeof leadsBreakdownSchema>;
+
+// RecentDeals component type
+export const recentDealSchema = z.object({
+  name: z.string(),
+  stage_name: z.string(),
+  status: z.string(),
+  value: z.number().nullable(),
+  updated_at: z.string().nullable(),
+});
+
+export type RecentDeal = z.infer<typeof recentDealSchema>;
+
+// Replit template types (unused by dashboard but required for compilation)
+export interface User {
+  id: string;
+  username: string;
+}
+
+export interface InsertUser {
+  username: string;
+}
