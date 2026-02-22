@@ -22,7 +22,7 @@
             {
               "id": "m1a00000-0001-4000-8000-000000000002",
               "name": "access_token",
-              "value": "YOUR_META_ACCESS_TOKEN",
+              "value": "YOUR_META_SYSTEM_USER_TOKEN",
               "type": "string"
             },
             {
@@ -39,7 +39,9 @@
       "typeVersion": 3.4,
       "position": [-96, -96],
       "id": "m1a00000-0002-4000-8000-000000000001",
-      "name": "Config"
+      "name": "Config",
+      "notesInFlow": true,
+      "notes": "IMPORTANT: Use a Meta System User token (never expires) instead of a short-lived user token. Generate one at: Business Settings > System Users > Generate Token. Short-lived tokens expire in ~1h, long-lived tokens in ~60d. System User tokens do not expire."
     },
     {
       "parameters": {
