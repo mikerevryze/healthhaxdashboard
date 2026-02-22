@@ -25,7 +25,7 @@
             },
             {
               "name": "time_range[until]",
-              "value": "2026-02-21"
+              "value": "={{ $now.format('yyyy-MM-dd') }}"
             },
             {
               "name": "time_increment",
@@ -124,7 +124,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Check if there's a next page of results (Meta paginates at 500+)\nconst response = $('Fetch Meta Insights').first().json;\nconst nextUrl = response?.paging?.next;\n\nif (nextUrl) {\n  return [{ json: { next_url: nextUrl } }];\n}\n\n// No more pages\nreturn [];"
+        "jsCode": "// Check if there's a next page of results (Meta paginates at 500+)\n// Try the most recent page first (Fetch Next Page), fall back to the initial fetch\nlet response;\ntry {\n  response = $('Fetch Next Page').first().json;\n} catch (e) {\n  response = $('Fetch Meta Insights').first().json;\n}\nconst nextUrl = response?.paging?.next;\n\nif (nextUrl) {\n  return [{ json: { next_url: nextUrl } }];\n}\n\n// No more pages\nreturn [];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
