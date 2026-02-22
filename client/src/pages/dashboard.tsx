@@ -15,6 +15,7 @@ import {
 import { MetricCard } from "@/components/MetricCard";
 import { FunnelChart } from "@/components/FunnelChart";
 import { GoalCalculator } from "@/components/GoalCalculator";
+import { MembershipValueCalculator } from "@/components/MembershipValueCalculator";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
@@ -233,6 +234,11 @@ export default function Dashboard() {
         ) : funnel && funnel.length > 0 ? (
           <FunnelChart funnel={funnel} />
         ) : null}
+      </div>
+
+      {/* Membership Value Calculator */}
+      <div className="mt-8">
+        <MembershipValueCalculator membershipsSold={metrics.closed_won} />
       </div>
 
       {/* Goal Calculator */}
