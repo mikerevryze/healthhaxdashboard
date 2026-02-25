@@ -16,7 +16,7 @@
             {
               "id": "ml000000-0001-4000-8000-000000000001",
               "name": "page_id",
-              "value": "YOUR_FACEBOOK_PAGE_ID",
+              "value": "696759387001681",
               "type": "string"
             },
             {
@@ -195,12 +195,12 @@
         "documentId": {
           "__rl": true,
           "mode": "id",
-          "value": "YOUR_GOOGLE_SHEET_ID"
+          "value": "1x4cBRF1b9FyF1hhMF3Ao_8z25ECkl3_dtJ-1wLS5l0s"
         },
         "sheetName": {
           "__rl": true,
           "mode": "name",
-          "value": "Sheet1"
+          "value": "FB Ad Prospect: Create/Update Keap Contacts from Google Sheets & Tag Into Systems Challenge - March 2026"
         },
         "columns": {
           "mappingMode": "defineBelow",
