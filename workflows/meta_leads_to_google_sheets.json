@@ -1,0 +1,422 @@
+{
+  "name": "CL_HealthHax_Meta_Leads_to_Google_Sheets",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-256, -96],
+      "id": "ml000000-0000-4000-8000-000000000001",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ml000000-0001-4000-8000-000000000001",
+              "name": "page_id",
+              "value": "YOUR_FACEBOOK_PAGE_ID",
+              "type": "string"
+            },
+            {
+              "id": "ml000000-0001-4000-8000-000000000002",
+              "name": "access_token",
+              "value": "YOUR_META_ACCESS_TOKEN",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-96, -96],
+      "id": "ml000000-0002-4000-8000-000000000001",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.page_id }}/leadgen_forms",
+        "sendHeaders": false,
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            },
+            {
+              "name": "fields",
+              "value": "id,name,status"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [64, -96],
+      "id": "ml000000-0003-4000-8000-000000000001",
+      "name": "Fetch Lead Forms",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ml000000-0004-4000-8000-000000000001",
+              "leftValue": "={{ ($json.data || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [224, -96],
+      "id": "ml000000-0005-4000-8000-000000000001",
+      "name": "Has Forms?"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [384, -96],
+      "id": "ml000000-0006-4000-8000-000000000001",
+      "name": "Split Out Forms"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.id }}/leads",
+        "sendHeaders": false,
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Config').first().json.access_token }}"
+            },
+            {
+              "name": "fields",
+              "value": "id,created_time,field_data"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [544, -96],
+      "id": "ml000000-0007-4000-8000-000000000001",
+      "name": "Fetch Leads",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ml000000-0008-4000-8000-000000000001",
+              "leftValue": "={{ ($json.data || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [704, -96],
+      "id": "ml000000-0009-4000-8000-000000000001",
+      "name": "Has Leads?"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [864, -96],
+      "id": "ml000000-0010-4000-8000-000000000001",
+      "name": "Split Out Leads"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract first_name, last_name, email, phone from Meta lead field_data.\n// Meta Lead Ads return field_data as an array of { name, values } objects.\nreturn items.map(item => {\n  const lead = item.json;\n  const fields = lead.field_data || [];\n\n  const getField = (name) => {\n    const field = fields.find(f =>\n      f.name.toLowerCase() === name.toLowerCase()\n    );\n    return field && field.values && field.values.length > 0\n      ? field.values[0]\n      : '';\n  };\n\n  return {\n    json: {\n      lead_id: lead.id || '',\n      created_time: lead.created_time || '',\n      first_name: getField('first_name'),\n      last_name: getField('last_name'),\n      email: getField('email'),\n      phone_number: getField('phone_number')\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1024, -96],
+      "id": "ml000000-0011-4000-8000-000000000001",
+      "name": "Extract Lead Fields"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "First Name": "={{ $json.first_name }}",
+            "Last Name": "={{ $json.last_name }}",
+            "Email": "={{ $json.email }}",
+            "Phone Number": "={{ $json.phone_number }}",
+            "Lead ID": "={{ $json.lead_id }}",
+            "Created Time": "={{ $json.created_time }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "First Name",
+              "displayName": "First Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last Name",
+              "displayName": "Last Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Phone Number",
+              "displayName": "Phone Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Lead ID",
+              "displayName": "Lead ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Created Time",
+              "displayName": "Created Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1184, -96],
+      "id": "ml000000-0012-4000-8000-000000000001",
+      "name": "Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "errorType": "=errorMessage",
+        "errorMessage": "={{ \"No lead forms found for the configured Facebook page\" }}"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [384, 64],
+      "id": "ml000000-0013-4000-8000-000000000001",
+      "name": "No Forms Found"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lead Forms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lead Forms": {
+      "main": [
+        [
+          {
+            "node": "Has Forms?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Forms?": {
+      "main": [
+        [
+          {
+            "node": "Split Out Forms",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Forms Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Forms": {
+      "main": [
+        [
+          {
+            "node": "Fetch Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Leads": {
+      "main": [
+        [
+          {
+            "node": "Has Leads?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Leads?": {
+      "main": [
+        [
+          {
+            "node": "Split Out Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Split Out Leads": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Lead Fields": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "ml000000-0000-4000-8000-000000000099",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0dd792e002b291da0dbecf5d75bc1f54e16c0266d8f8277263d78abbb783f658"
+  },
+  "id": "metaLeadsGoogleSheets001",
+  "tags": []
+}
