@@ -1,0 +1,216 @@
+{
+  "name": "Stress Test → Research → PDF → Email",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stress-test-submit",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: Stress Test Submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [220, 300],
+      "webhookId": "stress-test-submit"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and structure the submission data\nconst input = $input.first().json;\n\nconst data = {\n  path: input.path || 'franchisee',\n  brandName: input.brandName || 'Unknown Brand',\n  firstName: input.firstName || '',\n  lastName: input.lastName || '',\n  email: input.email || '',\n  phone: input.phone || '',\n  linkedIn: input.linkedIn || '',\n  numberOfOpenings: input.numberOfOpenings || 0,\n  populationDensity: input.populationDensity || 'suburban',\n  monthlyAdSpend: input.monthlyAdSpend || 0,\n  popupLeadsPerMonth: input.popupLeadsPerMonth || 0,\n  b2bEventsPerMonth: input.b2bEventsPerMonth || 0,\n  expectedCloseRate: input.expectedCloseRate || 0,\n  avgMemberValue: input.avgMemberValue || 0,\n  memberLifetimeMonths: input.memberLifetimeMonths || 0,\n  monthlyRent: input.monthlyRent || 0,\n  monthlyPayroll: input.monthlyPayroll || 0,\n  monthlyOtherCosts: input.monthlyOtherCosts || 0,\n};\n\n// Results from the frontend calculation\nconst results = input.results || {};\n\nreturn [{ json: { ...data, results } }];"
+      },
+      "id": "parse-input",
+      "name": "Parse Submission Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.google.com/search?q=\"{{ $json.brandName }}\" franchise",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "research-brand",
+      "name": "Research: Brand (Google)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [660, 180],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "=https://www.google.com/search?q=\"{{ $json.firstName }} {{ $json.lastName }}\" \"{{ $json.brandName }}\" franchise",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "research-prospect",
+      "name": "Research: Prospect (Google)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [660, 420],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge research results and build the report\nconst submission = $('Parse Submission Data').first().json;\nconst brandResearch = $('Research: Brand (Google)').first().json;\nconst prospectResearch = $('Research: Prospect (Google)').first().json;\n\nconst r = submission.results || {};\nconst healthLabel = {\n  critical: 'CRITICAL RISK',\n  at_risk: 'AT RISK',\n  healthy: 'HEALTHY',\n  thriving: 'THRIVING'\n};\n\n// Extract snippets from Google results (basic text extraction)\nfunction extractSnippets(html) {\n  if (!html || typeof html !== 'string') return 'No additional research data available.';\n  // Simple extraction of visible text snippets\n  const stripped = html.replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').substring(0, 2000);\n  return stripped || 'No additional research data available.';\n}\n\nconst brandInfo = extractSnippets(typeof brandResearch === 'string' ? brandResearch : brandResearch?.data);\nconst prospectInfo = extractSnippets(typeof prospectResearch === 'string' ? prospectResearch : prospectResearch?.data);\n\nconst costPerLocation = (submission.monthlyRent || 0) + (submission.monthlyPayroll || 0) + (submission.monthlyOtherCosts || 0);\n\n// Build HTML for PDF\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n    body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a1a; max-width: 800px; margin: 0 auto; padding: 40px; }\n    .header { background: #0a0a0a; color: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; }\n    .header h1 { margin: 0; color: #10E29C; font-size: 28px; }\n    .header p { margin: 8px 0 0; color: #999; }\n    .score-banner { padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 24px; }\n    .score-critical, .score-at_risk { background: #fef2f2; border: 2px solid #ef4444; }\n    .score-healthy, .score-thriving { background: #f0fdf4; border: 2px solid #10E29C; }\n    .score-label { font-size: 24px; font-weight: bold; }\n    .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }\n    .metric-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }\n    .metric-card .label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }\n    .metric-card .value { font-size: 24px; font-weight: bold; margin-top: 4px; }\n    .section { margin-bottom: 24px; }\n    .section h2 { font-size: 18px; border-bottom: 2px solid #10E29C; padding-bottom: 8px; margin-bottom: 16px; }\n    table { width: 100%; border-collapse: collapse; }\n    td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; }\n    td:last-child { text-align: right; font-weight: 600; }\n    .research-box { background: #f3f4f6; border-radius: 8px; padding: 16px; font-size: 13px; line-height: 1.6; max-height: 200px; overflow: hidden; }\n    .cta { background: #10E29C; color: #000; padding: 20px; border-radius: 8px; text-align: center; margin-top: 30px; }\n    .cta a { color: #000; font-weight: bold; font-size: 18px; text-decoration: none; }\n    .footer { text-align: center; margin-top: 30px; color: #9ca3af; font-size: 12px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>Launch Stress Test Report</h1>\n    <p>${submission.brandName} &bull; ${submission.firstName} ${submission.lastName} &bull; ${submission.path === 'franchisor' ? 'Franchisor' : 'Franchisee (5+ units)'}</p>\n  </div>\n\n  <div class=\"score-banner score-${r.healthScore || 'at_risk'}\">\n    <div class=\"score-label\">${healthLabel[r.healthScore] || 'AT RISK'}</div>\n    <p>Projected ${r.projectedMembersAtLaunch || 0} members per location &bull; Threshold: 150</p>\n  </div>\n\n  <div class=\"metrics-grid\">\n    <div class=\"metric-card\">\n      <div class=\"label\">Projected Members / Location</div>\n      <div class=\"value\">${r.projectedMembersAtLaunch || 0}</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"label\">Total MRR (${submission.numberOfOpenings} locations)</div>\n      <div class=\"value\">$${(r.totalMRR || 0).toLocaleString()}</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"label\">Net / Location / Month</div>\n      <div class=\"value\" style=\"color: ${(r.netMonthlyPerLocation || 0) >= 0 ? '#10E29C' : '#ef4444'}\">${(r.netMonthlyPerLocation || 0) >= 0 ? '+' : ''}$${(r.netMonthlyPerLocation || 0).toLocaleString()}</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"label\">Member LTV</div>\n      <div class=\"value\">$${(r.ltv || 0).toLocaleString()}</div>\n    </div>\n  </div>\n\n  <div class=\"section\">\n    <h2>Input Summary</h2>\n    <table>\n      <tr><td>Openings (12 mo)</td><td>${submission.numberOfOpenings}</td></tr>\n      <tr><td>Market Type</td><td>${submission.populationDensity}</td></tr>\n      <tr><td>Monthly Ad Spend</td><td>$${(submission.monthlyAdSpend || 0).toLocaleString()}</td></tr>\n      <tr><td>Pop-up Events / mo</td><td>${submission.popupLeadsPerMonth}</td></tr>\n      <tr><td>B2B Events / mo</td><td>${submission.b2bEventsPerMonth}</td></tr>\n      <tr><td>Close Rate</td><td>${submission.expectedCloseRate}%</td></tr>\n      <tr><td>Avg Member Value</td><td>$${submission.avgMemberValue}/mo</td></tr>\n      <tr><td>Member Lifetime</td><td>${submission.memberLifetimeMonths} months</td></tr>\n      <tr><td>Monthly Costs / Location</td><td>$${costPerLocation.toLocaleString()}</td></tr>\n    </table>\n  </div>\n\n  <div class=\"section\">\n    <h2>Lead Pipeline Analysis</h2>\n    <table>\n      <tr><td>Paid Leads / mo</td><td>${r.paidLeadsPerMonth || 0}</td></tr>\n      <tr><td>Organic Leads / mo</td><td>${r.organicLeadsPerMonth || 0}</td></tr>\n      <tr><td>Total Leads / mo</td><td>${r.totalLeadsPerMonth || 0}</td></tr>\n      <tr><td>Adjusted CPL</td><td>$${r.adjustedCPL || 0}</td></tr>\n      <tr><td>ROAS Ratio</td><td>${(r.roasRatio || 0).toFixed(1)}x</td></tr>\n    </table>\n  </div>\n\n  <div class=\"section\">\n    <h2>Brand Research: ${submission.brandName}</h2>\n    <div class=\"research-box\">${brandInfo}</div>\n  </div>\n\n  <div class=\"section\">\n    <h2>Prospect Research: ${submission.firstName} ${submission.lastName}</h2>\n    <div class=\"research-box\">${prospectInfo}</div>\n  </div>\n\n  <div class=\"cta\">\n    <a href=\"https://calendly.com/revryze/launch-audit\">Book a Launch Audit Call &rarr;</a>\n    <p style=\"margin: 8px 0 0; font-size: 14px;\">Let's close the gap and hit 170+ members per opening.</p>\n  </div>\n\n  <div class=\"footer\">\n    <p>Generated by Revryze Launch Stress Test &bull; ${new Date().toLocaleDateString()}</p>\n    <p>Contact: ${submission.email} ${submission.phone ? '&bull; ' + submission.phone : ''}</p>\n  </div>\n</body>\n</html>`;\n\nreturn [{ json: { ...submission, reportHtml: html, brandInfo, prospectInfo } }];"
+      },
+      "id": "build-report",
+      "name": "Build PDF Report HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.html2pdf.app/v1/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "html",
+              "value": "={{ $json.reportHtml }}"
+            },
+            {
+              "name": "apiKey",
+              "value": "={{ $env.HTML2PDF_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "generate-pdf",
+      "name": "Generate PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM || 'noreply@revryze.com' }}",
+        "toEmail": "sales@revryze.com",
+        "subject": "=Launch Stress Test: {{ $('Parse Submission Data').first().json.brandName }} — {{ $('Parse Submission Data').first().json.firstName }} {{ $('Parse Submission Data').first().json.lastName }}",
+        "emailType": "html",
+        "html": "=<h2>New Launch Stress Test Submission</h2>\n<p><strong>Brand:</strong> {{ $('Parse Submission Data').first().json.brandName }}</p>\n<p><strong>Contact:</strong> {{ $('Parse Submission Data').first().json.firstName }} {{ $('Parse Submission Data').first().json.lastName }}</p>\n<p><strong>Email:</strong> {{ $('Parse Submission Data').first().json.email }}</p>\n<p><strong>Phone:</strong> {{ $('Parse Submission Data').first().json.phone }}</p>\n<p><strong>LinkedIn:</strong> {{ $('Parse Submission Data').first().json.linkedIn }}</p>\n<p><strong>Path:</strong> {{ $('Parse Submission Data').first().json.path }}</p>\n<hr>\n<p><strong>Openings:</strong> {{ $('Parse Submission Data').first().json.numberOfOpenings }}</p>\n<p><strong>Health Score:</strong> {{ $('Build PDF Report HTML').first().json.results.healthScore }}</p>\n<p><strong>Projected Members:</strong> {{ $('Build PDF Report HTML').first().json.results.projectedMembersAtLaunch }}</p>\n<p><strong>Total MRR:</strong> ${{ $('Build PDF Report HTML').first().json.results.totalMRR }}</p>\n<hr>\n<p>Full report attached as PDF.</p>",
+        "options": {
+          "attachments": "data"
+        }
+      },
+      "id": "send-email",
+      "name": "Email PDF to Sales",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1340, 300],
+      "credentials": {
+        "smtp": {
+          "id": "CONFIGURE_SMTP_CREDENTIALS",
+          "name": "SMTP (configure in n8n)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: Stress Test Submission": {
+      "main": [
+        [
+          {
+            "node": "Parse Submission Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Submission Data": {
+      "main": [
+        [
+          {
+            "node": "Research: Brand (Google)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Research: Prospect (Google)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research: Brand (Google)": {
+      "main": [
+        [
+          {
+            "node": "Build PDF Report HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research: Prospect (Google)": {
+      "main": [
+        [
+          {
+            "node": "Build PDF Report HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build PDF Report HTML": {
+      "main": [
+        [
+          {
+            "node": "Generate PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate PDF": {
+      "main": [
+        [
+          {
+            "node": "Email PDF to Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "stress-test",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
