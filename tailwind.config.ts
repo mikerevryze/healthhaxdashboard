@@ -81,6 +81,35 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+        /* Experience-specific colors */
+        "surface-0": "#000000",
+        "surface-1": "#0A0A0A",
+        "surface-2": "#111111",
+        "surface-3": "#1A1A1A",
+        "surface-4": "#222222",
+        "text-primary": "#F5F5F5",
+        "text-secondary": "#999999",
+        "text-muted": "#666666",
+        brand: {
+          DEFAULT: "#10E29C",
+          dim: "#0CBE83",
+          glow: "rgba(16, 226, 156, 0.15)",
+          subtle: "rgba(16, 226, 156, 0.08)",
+        },
+        danger: {
+          DEFAULT: "#EF4444",
+          dim: "rgba(239, 68, 68, 0.15)",
+        },
+        warning: {
+          DEFAULT: "#F59E0B",
+          dim: "rgba(245, 158, 11, 0.15)",
+        },
+        success: {
+          DEFAULT: "#10E29C",
+          dim: "rgba(16, 226, 156, 0.15)",
+        },
+        "border-line": "rgba(255, 255, 255, 0.08)",
+        "border-bright": "rgba(255, 255, 255, 0.15)",
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
